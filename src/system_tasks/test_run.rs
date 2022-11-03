@@ -1,15 +1,10 @@
-use std::borrow::BorrowMut;
-
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
 use std::convert::Infallible;
-use std::net::SocketAddr;
 use tokio::task::JoinHandle;
 use tracing::*;
 use warp::Filter;
 
 use crate::system::{
-    db::{Migration, Migrations},
+    db::Migrations,
     system::{QuitOnError, System, SystemPlugin},
 };
 
@@ -32,6 +27,7 @@ impl TestRun {
         }
     }
 
+    #[allow(dead_code)]
     pub fn test_run_data(self, data_path: String) -> Self {
         Self { data_path, ..self }
     }

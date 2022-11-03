@@ -1,21 +1,15 @@
 use std::{
     borrow::Cow,
-    fs,
     io::Write,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
-    time::Duration,
 };
 
 use config::{Config, FileFormat};
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
-use tokio::{
-    sync::{broadcast, mpsc},
-    task::JoinHandle,
-};
-use toml::{map::Map, Value};
+use tokio::{sync::broadcast, task::JoinHandle};
 
 use tracing::*;
 
@@ -146,17 +140,6 @@ pub struct SystemConfig {
     database: DatabaseConfig,
 }
 
-const PASSWORD_CHARS: &[u8] =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".as_bytes();
-fn gen_new_password(len: usize) -> String {
-    use rand::prelude::*;
-    PASSWORD_CHARS
-        .choose_multiple(&mut thread_rng(), len)
-        .cloned()
-        .map(Into::<char>::into)
-        .collect::<String>()
-}
-
 impl Default for SystemConfig {
     fn default() -> Self {
         Self {
@@ -180,7 +163,6 @@ impl SystemConfig {
                 .unwrap();
             let s: SettingsConfig = config.try_deserialize().unwrap();
             let system_config = s.into();
-            println!("s: {:?}", system_config);
             Ok(Some(system_config))
         } else {
             let mut file = std::fs::File::create(path)?;
@@ -197,7 +179,9 @@ pub struct System {
     config: SystemConfig,
     pub root_path: PathBuf,
     db_lock: ConnectionLock,
+    pub dbname: String,
     pub db_pool: DbPool,
+    pub running: bool,
     /// These tasks are ones that keep the system running, useful for daemon's, TUI's, network, etc.
     /// These tasks should *ALWAYS* quit when `quit` is broadcast on or the system may not ever die.
     pub system_tasks: Arc<crossbeam::queue::SegQueue<JoinHandle<anyhow::Result<()>>>>,
@@ -254,10 +238,13 @@ impl System {
         config: SystemConfig,
     ) -> anyhow::Result<System> {
         info!("Initialized logging system");
-        init_logging(Some(&root_path))?;
+        match init_logging(Some(&root_path)) {
+            _ => {}
+        };
         let (quit, _recv_quit) = broadcast::channel(1);
         let (msg, _recv_msg) = broadcast::channel(10);
         let (db_lock, db_pool) = config.database.create_database_pool().await?;
+        let dbname = uuid::Uuid::new_v4().to_string();
         let mut system = System {
             root_path,
             config,
@@ -266,6 +253,8 @@ impl System {
             system_tasks: Default::default(),
             quit,
             msg,
+            dbname,
+            running: false,
         };
         system.startup_systems().await?;
         Ok(system)
@@ -286,6 +275,7 @@ impl System {
 
     pub async fn cleanup(&mut self) -> anyhow::Result<()> {
         self.db_pool.close().await;
+        let _ = &self.db_lock.cleanup().await;
         drop(&self.db_pool);
         drop(&self.db_lock);
         info!("Database shut down, exiting");
@@ -335,5 +325,9 @@ impl System {
             }
         }
         Ok(())
+    }
+
+    pub fn as_uri(&self) -> anyhow::Result<String> {
+        Ok(self.db_lock.full_db_uri(self.dbname.as_str()))
     }
 }

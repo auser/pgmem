@@ -446,6 +446,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "daemonizr"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d84191363b8a64fa704c11fd1b2a09675b47afae795402120578543830b167ee"
+dependencies = [
+ "nix",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1267,6 +1276,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f866317acbd3a240710c63f065ffb1e4fd466259045ccb504130b7f668f35c6"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1540,6 +1562,7 @@ dependencies = [
  "anyhow",
  "config",
  "crossbeam",
+ "daemonizr",
  "flexi_logger",
  "hyper",
  "neon",
@@ -1548,6 +1571,7 @@ dependencies = [
  "portpicker",
  "rand",
  "serde",
+ "serde_json",
  "sha2",
  "sqlx 0.6.2",
  "structopt",
@@ -1555,6 +1579,7 @@ dependencies = [
  "toml",
  "tracing",
  "typetag",
+ "uuid",
  "warp",
 ]
 
@@ -2707,6 +2732,10 @@ name = "uuid"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
+dependencies = [
+ "getrandom",
+ "serde",
+]
 
 [[package]]
 name = "vcpkg"

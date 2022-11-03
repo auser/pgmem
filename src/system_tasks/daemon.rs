@@ -1,4 +1,3 @@
-use anyhow::Context;
 use tokio::task::JoinHandle;
 use tracing::*;
 
@@ -18,7 +17,7 @@ impl Daemon {
 #[typetag::serde]
 impl SystemPlugin for Daemon {
     fn spawn(&self, system: &System) -> Option<JoinHandle<anyhow::Result<()>>> {
-        let headless = self.headless;
+        let _headless = self.headless;
         let do_quit = system.quit.clone();
         let mut on_quit = system.quit.subscribe();
         let handle = tokio::task::spawn(async move {

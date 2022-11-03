@@ -1,9 +1,9 @@
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{fs, path::PathBuf, time::Duration};
 
 use anyhow::bail;
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
-    pg_fetch::{PgFetchSettings, PostgresVersion, PG_V13},
+    pg_fetch::{PgFetchSettings, PostgresVersion},
     postgres::{PgEmbed, PgSettings},
 };
 use tracing::*;
@@ -34,30 +34,34 @@ impl ConnectionLock {
             ConnectionLock::Embedded(pg) => &pg.db_uri,
         }
     }
-}
 
-impl Drop for ConnectionLock {
-    fn drop(&mut self) {
+    pub fn full_db_uri(&self, db_name: &str) -> String {
+        match self {
+            ConnectionLock::External(conn_string) => String::from(conn_string),
+            ConnectionLock::Embedded(pg) => (&pg).full_db_uri(db_name),
+        }
+    }
+
+    pub async fn cleanup(&mut self) {
         match self {
             ConnectionLock::External(_) => (),
             ConnectionLock::Embedded(pg) => {
                 info!("Shutting down embedded database...");
-                // let rt = tokio::runtime::Builder::new_current_thread()
-                //     .enable_time()
-                //     .build()
-                //     .unwrap();
-
-                // rt.block_on(async move {
-                let _dropped_ = pg.stop_db();
-                // });
-                // info!("Shutting down embedded database...");
-                // if let Err(e) = pg.stop_db() {
-                //     error!("error upon shutting down embedded postgres: {:?}", e);
-                // } else {
-                //     info!("Embedded database is shut down");
-                // }
+                if let Err(e) = pg.stop_db().await {
+                    error!("Error occurred: {:#?}", e);
+                } else {
+                    info!("Embedded database is shut down");
+                }
             }
         }
+    }
+}
+
+impl Drop for ConnectionLock {
+    fn drop(&mut self) {
+        info!("Called drop on ConnectionLock");
+        let rt = tokio::runtime::Runtime::new().expect("could not start tokio rt");
+        let _ = rt.block_on(async move { self.cleanup() });
     }
 }
 
@@ -119,6 +123,8 @@ impl ConnectionType {
                     migration_dir: None,
                     auth_method: PgAuthMethod::Plain,
                 };
+
+                let _ = fs::remove_dir_all(database_dir);
 
                 info!("Initializing embedded postgresql database");
                 let mut pg =

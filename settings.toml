@@ -1,0 +1,9 @@
+run_mode = "Foreground"
+
+[database]
+db_type = "Embedded"
+max_connections = 5
+persistent = false
+root_path = "."
+username = "postgres"
+password = "postgres"

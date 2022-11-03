@@ -1,10 +1,8 @@
 use anyhow::bail;
-use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Executor, PgPool, Transaction};
 use std::convert::TryInto;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::*;
@@ -66,7 +64,7 @@ pub struct DatabaseConfig {
 impl DatabaseConfig {
     #[allow(clippy::too_many_arguments)]
     pub fn new_embedded(max_connections: u8, config_database: ConfigDatabase) -> Self {
-        let port = pick_unused_port().expect("Unable to pick a random port");
+        // let port = pick_unused_port().expect("Unable to pick a random port");
         let connection: ConnectionType = config_database.into();
         Self {
             connection,
@@ -74,6 +72,7 @@ impl DatabaseConfig {
         }
     }
 
+    #[allow(unused)]
     pub fn new_external(max_connections: u8, uri: impl Into<String>) -> Self {
         Self {
             connection: ConnectionType::External(uri.into()),
@@ -101,7 +100,6 @@ impl DatabaseConfig {
 }
 
 pub type DbPool = Arc<PgPool>;
-pub type DbTransaction<'a> = Transaction<'a, sqlx::Postgres>;
 
 async fn migrate_migration_table(pool: &PgPool) -> anyhow::Result<()> {
     pool.execute(
@@ -135,6 +133,7 @@ pub struct Migrations<'n, 'm, 'd, 'su, 'sd> {
     pub migrations: &'m [Migration<'d, 'su, 'sd>],
 }
 
+#[allow(unused)]
 impl<'d, 'su, 'sd> Migration<'d, 'su, 'sd> {
     pub const fn new(description: &'d str) -> Self {
         Self {
