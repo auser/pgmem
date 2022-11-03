@@ -12,17 +12,12 @@ impl Daemon {
     pub fn new(headless: bool) -> Self {
         Self { headless }
     }
-}
 
-#[typetag::serde]
-impl SystemPlugin for Daemon {
-    fn spawn(&self, system: &System) -> Option<JoinHandle<anyhow::Result<()>>> {
-        let _headless = self.headless;
+    pub fn setup_handler(&self, system: &System) -> JoinHandle<anyhow::Result<()>> {
         let do_quit = system.quit.clone();
         let mut on_quit = system.quit.subscribe();
-        let handle = tokio::task::spawn(async move {
+        tokio::task::spawn(async move {
             info!("Daemon task has launched");
-            // Just wait until quit is requested, and then exit, or if ctrl+c is pressed, then exit safely.
             loop {
                 #[cfg(target_os = "linux")]
                 let mut hangup =
@@ -91,7 +86,18 @@ impl SystemPlugin for Daemon {
             }
 
             Ok(())
-        });
+        })
+    }
+}
+
+#[typetag::serde]
+impl SystemPlugin for Daemon {
+    fn spawn(&self, system: &System) -> Option<JoinHandle<anyhow::Result<()>>> {
+        let _headless = self.headless;
+        let do_quit = system.quit.clone();
+        let mut on_quit = system.quit.subscribe();
+
+        let handle = self.setup_handler(system);
         Some(handle)
     }
 }

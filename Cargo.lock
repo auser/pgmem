@@ -1564,6 +1564,8 @@ dependencies = [
  "crossbeam",
  "daemonizr",
  "flexi_logger",
+ "futures",
+ "glob",
  "hyper",
  "neon",
  "once_cell",

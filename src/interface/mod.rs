@@ -1,110 +1,168 @@
-use neon::prelude::*;
+use neon::{prelude::*, types::Deferred};
 use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
 use std::future::Future;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 use tokio::signal;
 use tokio::sync::mpsc::channel;
+use tracing::*;
 
 use crate::system::system::System;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JSSystemRequest {}
+type SystemCallback = Box<dyn FnOnce(&Channel, Deferred) + Send>;
 
 static RUNTIME: OnceCell<Runtime> = OnceCell::new();
 // Return a global tokio runtime or create one if it doesn't exist.
 // Throws a JavaScript exception if the `Runtime` fails to create.
 fn runtime<'a, C: Context<'a>>(cx: &mut C) -> NeonResult<&'static Runtime> {
-    RUNTIME.get_or_try_init(|| Runtime::new().or_else(|err| cx.throw_error(err.to_string())))
-}
-
-fn reset<'a, C: Context<'a>>(cx: &mut C) -> NeonResult<&'static Runtime> {
-    RUNTIME.set(
-        Runtime::new()
+    // Runtime::new()
+    RUNTIME.get_or_try_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
             .or_else(|err| cx.throw_error(err.to_string()))
-            .unwrap(),
-    );
-    runtime(cx)
+    })
 }
 
 pub fn block_on<F: Future>(future: F) -> F::Output {
-    let rt = tokio::runtime::Runtime::new().expect("could not start tokio rt");
+    // let rt = tokio::runtime::Runtime::new().expect("could not start tokio rt");
+    // let handle = Handle::current();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("could not create runtime");
     rt.block_on(future)
 }
 
 pub struct JSSystem {
-    // tx: tokio::sync::mpsc::Sender<SystemMessage>,
-    pub system: System,
+    tx: tokio::sync::mpsc::Sender<SystemMessage>,
+    db_uri: String,
+    // pub system: System,
 }
 impl Finalize for JSSystem {}
 
 #[allow(unused)]
-#[derive(Debug)]
+#[derive()]
 enum SystemMessage {
+    Callback(Deferred, SystemCallback),
     Close,
 }
 
 impl JSSystem {
-    pub fn new() -> Self {
-        let (send, mut recv) = channel::<SystemMessage>(1);
-        let system = block_on(async move {
-            let mut sys = System::initialize().await.unwrap();
-            let mut do_quit = sys.quit.subscribe();
+    pub fn new<'a, C>(cx: &mut C) -> Self
+    where
+        C: Context<'a>,
+    {
+        let (tx, mut rx) = channel::<SystemMessage>(1);
+        // let mut system = block_on(async {
+        //     // let channel = cx.channel();
+        //     // // let mut do_msg
+        //     // tokio::select! {
+        //     // _ = do_quit.recv() => {
+        //     //     info!("Received a kill from somewhere in the app");
+        //     // }
+        //     //     _ = async {
+        //     //         let message = rx.recv().await.unwrap();
+        //     //         let _ = match message {
+        //     //             SystemMessage::Callback(deferred, f) => {
+        //     //                 f(&channel, deferred);
+        //     //                 Ok::<_, anyhow::Error>(())
+        //     //             },
+        //     //             SystemMessage::Close => {
+        //     //                 // system.cleanup().await;
+        //     //                 Ok::<_, anyhow::Error>(())
+        //     //             },
+        //     //         };
+        //     //     }=> {}
+        //     //     else => {
+        //     //         println!("Got something else?");
+        //     //     }
+        //     // }
+        //     // let _res = sys.cleanup().await;
+        //     sys
+        // });
 
-            tokio::select! {
-                _ = signal::ctrl_c() => {}
-                _ = do_quit.recv() => {
-                }
-                Some(message) = recv.recv() => {
-                    println!("Received a message: {:?}", message);
-                                        // let _ = match message {
-                                        //     SystemMessage::Callback(deferred, f) => {
-                                        //         f(&mut system, &channel, deferred);
-                                        //         Ok::<_, anyhow::Error>(())
-                                        //     },
-                                        //     SystemMessage::Close => {
-                                        //         // system.cleanup().await;
-                                        //         Ok::<_, anyhow::Error>(())
-                                        //     },
-                                        // };
-                                    }
-                else => {
-                    println!("Got something else?");
-                }
-            }
-            let _res = sys.cleanup().await;
-            drop(send);
+        // let handle = Handle::current();
+        let mut system = block_on(async {
+            let mut sys = System::initialize().await.unwrap();
             sys
         });
-        Self { system }
+        let mut do_quit = system.quit.subscribe();
+        let mut do_msg = system.msg.subscribe();
+        let db_uri = String::from(system.as_uri().unwrap());
+        let handle = match tokio::runtime::Handle::try_current() {
+            Err(_) => runtime(cx).unwrap().handle(),
+            Ok(handle) => &handle,
+        };
+        handle.spawn(async move {
+            let _ = system.run_loop().await;
+            info!("run loop is running");
+        });
+        handle.block_on(async move {
+            tokio::select! {
+                _ = async {
+                    loop {
+                        if let Ok(msg) = do_msg.recv().await {
+                            info!("Received a message: {:?}", msg);
+                        }
+                    }
+                } => {}
+                _ = do_quit.recv() => {}
+            }
+        });
+        // rt.spawn(async move {
+        //     let _ = system.run_loop().await;
+        // });
+        // let handle = rt.spawn(async move {
+        //     let _ = system.run_loop();
+        // });
+        // let _ = rt.block_on(handle);
+
+        // rt.spawn(async move {
+        //     let _ = system.run_loop().await;
+        // });
+
+        Self { db_uri, tx }
     }
 
-    pub fn as_uri(&self) -> anyhow::Result<String> {
-        self.system.as_uri()
+    pub fn db_uri(&self) -> &String {
+        &self.db_uri
+    }
+
+    // Idiomatic rust would take an owned `self` to prevent use after close
+    // However, it's not possible to prevent JavaScript from continuing to hold a closed database
+    pub fn close(&self) -> anyhow::Result<()> {
+        let _ = &self.tx.send(SystemMessage::Close);
+        Ok(())
+    }
+
+    pub fn send(
+        &self,
+        deferred: Deferred,
+        callback: impl FnOnce(&Channel, Deferred) + Send + 'static,
+    ) -> anyhow::Result<()> {
+        let _ = self
+            .tx
+            .send(SystemMessage::Callback(deferred, Box::new(callback)));
+        Ok(())
     }
 }
 
 impl JSSystem {
     pub fn js_new(mut cx: FunctionContext) -> JsResult<JsBox<JSSystem>> {
-        let sys = JSSystem::new();
+        let sys = JSSystem::new(&mut cx);
         Ok(cx.boxed(sys))
-    }
-
-    pub fn js_reset(mut cx: FunctionContext) -> JsResult<JsBoolean> {
-        reset(&mut cx);
-        Ok(cx.boolean(true))
     }
 
     pub fn js_db_uri(mut cx: FunctionContext) -> JsResult<JsString> {
         let sys = cx.this().downcast_or_throw::<JsBox<JSSystem>, _>(&mut cx)?;
-        let uri = sys.as_uri().unwrap(); // TODO check this?
+        let uri = sys.db_uri();
         Ok(cx.string(uri))
     }
 
     pub fn js_handle_request(mut cx: FunctionContext) -> JsResult<JsPromise> {
         let req = cx.argument::<JsString>(0)?.value(&mut cx);
-        let value: serde_json::Value = serde_json::from_str(&req).unwrap();
-        let request = serde_json::from_value::<JSSystemRequest>(value).unwrap();
+        // let value: serde_json::Value = serde_json::from_str(&req).unwrap();
+        // let request = serde_json::from_value::<SystemMessage>(value).unwrap();
         // let sys = cx.this().downcast_or_throw::<JsBox<JSSystem>, _>(&mut cx)?;
 
         // Boilerplate for Neon/Promises/Tokio
@@ -113,7 +171,7 @@ impl JSSystem {
         let (deferred, promise) = cx.promise();
         // hack: don't even use a promise straight up block
         let a = block_on(async move {
-            println!("Got a thing: {:?}", request);
+            println!("Got a thing: {:?}", req);
             // let result = sys.execute(request).await;
             ()
         });

@@ -1,12 +1,14 @@
-use std::convert::Infallible;
+use glob::glob;
+use std::{
+    convert::Infallible,
+    fs::File,
+    io::{BufRead, BufReader, Read},
+};
 use tokio::task::JoinHandle;
 use tracing::*;
 use warp::Filter;
 
-use crate::system::{
-    db::Migrations,
-    system::{QuitOnError, System, SystemPlugin},
-};
+use crate::system::system::{QuitOnError, System, SystemPlugin};
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 pub struct TestRuns {}
@@ -39,16 +41,45 @@ impl SystemPlugin for TestRun {
         if !self.enabled {
             return None;
         }
+        info!("SystemPlugin for TestRun");
         let db_pool = system.db_pool.clone();
         let do_quit = system.quit.clone();
         let mut on_quit = do_quit.subscribe();
+        let do_msg = system.msg.clone();
+        let mut on_msg = do_msg.subscribe();
+
+        // Read all the sql files
+        let mut sql = String::new();
+        let pattern = String::from(system.root_path.join("**/*.sql").to_str().unwrap());
+        info!("Looking in directory: {:?}", pattern);
+        for entry in glob(pattern.as_str()).expect("Failed to read glob pattern") {
+            match entry {
+                Ok(path) => {
+                    info!("Found path: {:#?}", path);
+                    match File::open(path) {
+                        Err(e) => {
+                            error!("Unable to open {:?}", e);
+                        }
+                        Ok(mut file) => {
+                            let mut contents = String::new();
+                            file.read_to_string(&mut contents)
+                                .expect("Unable to read file");
+                            sql.push_str(contents.as_str());
+                            sql.push_str(&format!("\n\n----\n\n"));
+                        }
+                    };
+                }
+                Err(e) => {
+                    error!("Unable to read file: {:?}", e);
+                }
+            }
+        }
+
+        info!("SQL to run everytime: {:#?}", sql);
+
         // let mut on_quit = system.quit.subscribe();
         let handle = tokio::task::spawn(async move {
             info!("TestRun Handler task has launched");
-            MIGRATIONS
-                .migrate_up(&db_pool)
-                .await
-                .quit_on_err(&do_quit)?;
 
             let routes = warp::any().map(|| "Hello From Warp!");
             let svc = warp::service(routes);
@@ -56,6 +87,12 @@ impl SystemPlugin for TestRun {
                 warp::hyper::service::make_service_fn(
                     move |_| async move { Ok::<_, Infallible>(svc) },
                 );
+
+            tokio::select! {
+                Ok(msg) = on_msg.recv() => {
+                    info!("Received message: {:?}", msg);
+                }
+            }
 
             info!("Launching listener");
             if let Err(error) = warp::hyper::Server::bind(&([127, 0, 0, 1], 3030).into())
@@ -72,22 +109,8 @@ impl SystemPlugin for TestRun {
             }
             let _ = do_quit.send(());
 
-            // let pg_pool = MIGRATIONS
-            // 	.migrate_up_and_get_pool(&registered_data, Duration::from_secs(60))
-            // 	.await
-            // 	.quit_on_err(&do_quit)?;
-            // tokio::select! {
-            //   msg = recv_msg.recv() => {
-            //     println!("msg: {:?}", msg);
-            //   }
-            //   _ = recv_quit.recv() => {
-            //     println!("Received quit");
-            //   }
-            // }
             Ok(())
         });
         Some(handle)
     }
 }
-
-const MIGRATIONS: Migrations = Migrations::new("TestRun", &[]);

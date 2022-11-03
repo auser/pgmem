@@ -273,6 +273,17 @@ impl System {
         Ok(())
     }
 
+    pub async fn run_from_init(system: &mut System) -> anyhow::Result<()> {
+        info!(
+            "Running system, {} system tasks upon startup",
+            system.system_tasks.len()
+        );
+        system.run_loop().await?;
+        info!("System running completed, no system tasks remaining, shutting down database");
+        system.cleanup().await?;
+        Ok(())
+    }
+
     pub async fn cleanup(&mut self) -> anyhow::Result<()> {
         self.db_pool.close().await;
         let _ = &self.db_lock.cleanup().await;
@@ -301,18 +312,13 @@ impl System {
                 self.system_tasks.push(handle);
             }
         }
-        // for plugin in &self.config.plugins {
-        // 	info!("Processing system task: {}", plugin.name());
-        // 	if let Some(handle) = plugin.spawn(self) {
-        // 		self.system_tasks.push(handle);
-        // 	}
-        // }
         info!("System startup complete");
         Ok(())
     }
 
     #[tracing::instrument(name = "System RunLoop", skip(self))]
     pub async fn run_loop(&mut self) -> anyhow::Result<()> {
+        info!("Entering the run_loop");
         while let Some(task) = self.system_tasks.pop() {
             match task.await {
                 Ok(Ok(())) => (),
@@ -323,6 +329,13 @@ impl System {
                     error!("System Task Join Error: {}", e);
                 }
             }
+        }
+        Ok(())
+    }
+
+    pub fn add_task<C: SystemPlugin>(&mut self, plugin: C) -> anyhow::Result<()> {
+        if let Some(handle) = plugin.spawn(self) {
+            self.system_tasks.push(handle);
         }
         Ok(())
     }
