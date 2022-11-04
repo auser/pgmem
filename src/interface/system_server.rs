@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    fmt::Debug,
     sync::{Arc, Mutex},
 };
 
@@ -19,14 +20,18 @@ pub struct SystemServer {
 
 impl Finalize for SystemServer {}
 
-pub struct Function {
-    pub channel: Channel,
-    pub callback: Arc<Root<JsFunction>>,
-}
-
 #[allow(unused)]
 #[derive()]
 pub enum SystemMessage {
     Callback(Deferred, SystemCallback),
     Close,
+}
+
+impl Debug for SystemMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SystemMessage::Callback(_, _) => write!(f, "Callback"),
+            SystemMessage::Close => write!(f, "Close"),
+        }
+    }
 }
