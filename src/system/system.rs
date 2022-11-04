@@ -2,11 +2,15 @@ use std::{
     borrow::Cow,
     io::Write,
     path::{Path, PathBuf},
+    pin::Pin,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Mutex},
+    task::Context,
+    time::Instant,
 };
 
 use config::{Config, FileFormat};
+use futures::task::ArcWake;
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 use tokio::{sync::broadcast, task::JoinHandle};
@@ -190,11 +194,11 @@ pub struct System {
 }
 
 impl System {
-    pub async fn run() -> anyhow::Result<()> {
+    pub async fn run() -> anyhow::Result<Self> {
         Self::run_with_args(SystemArgs::from_args()).await
     }
 
-    pub async fn run_with_args(args: SystemArgs) -> anyhow::Result<()> {
+    pub async fn run_with_args(args: SystemArgs) -> anyhow::Result<Self> {
         let config_path = args.root_dir.join("settings.toml");
         if let Some(mut config) = SystemConfig::get_or_create(&config_path)? {
             if let Some(run_mode) = args.run_mode {
@@ -207,7 +211,7 @@ impl System {
       "No configuration found, wrote out new configuration file at: {:?}, please make edits as necessary and launch again",
       config_path
     );
-            Ok(())
+            Err(anyhow::anyhow!("Retry with config"))
         }
     }
 
@@ -260,7 +264,7 @@ impl System {
         Ok(system)
     }
 
-    pub async fn run_with_config(root_path: PathBuf, config: SystemConfig) -> anyhow::Result<()> {
+    pub async fn run_with_config(root_path: PathBuf, config: SystemConfig) -> anyhow::Result<Self> {
         info!("Initialized logging system");
         let mut system = System::initialize_with_config(root_path, config).await?;
         info!(
@@ -270,7 +274,7 @@ impl System {
         system.run_loop().await?;
         info!("System running completed, no system tasks remaining, shutting down database");
         system.cleanup().await?;
-        Ok(())
+        Ok(system)
     }
 
     pub async fn run_from_init(system: &mut System) -> anyhow::Result<()> {
@@ -316,19 +320,38 @@ impl System {
         Ok(())
     }
 
+    // #[tracing::instrument(name = "System RunLoop", skip(self))]
+    // pub async fn run_loop(&mut self) -> anyhow::Result<()> {
+    //     info!("Entering the run_loop");
+    //     while let Some(task) = self.system_tasks.pop() {
+    //         match task.await {
+    //             Ok(Ok(())) => (),
+    //             Ok(Err(e)) => {
+    //                 error!("System Task returned an error result: {}", e);
+    //             }
+    //             Err(e) => {
+    //                 error!("System Task Join Error: {}", e);
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
     #[tracing::instrument(name = "System RunLoop", skip(self))]
     pub async fn run_loop(&mut self) -> anyhow::Result<()> {
         info!("Entering the run_loop");
         while let Some(task) = self.system_tasks.pop() {
-            match task.await {
-                Ok(Ok(())) => (),
-                Ok(Err(e)) => {
-                    error!("System Task returned an error result: {}", e);
+            tokio::spawn(async move {
+                match task.await {
+                    Ok(Ok(())) => (),
+                    Ok(Err(e)) => {
+                        error!("System Task returned an error result: {}", e);
+                    }
+                    Err(e) => {
+                        error!("System Task Join Error: {}", e);
+                    }
                 }
-                Err(e) => {
-                    error!("System Task Join Error: {}", e);
-                }
-            }
+            });
         }
         Ok(())
     }
@@ -336,6 +359,7 @@ impl System {
     pub fn add_task<C: SystemPlugin>(&mut self, plugin: C) -> anyhow::Result<()> {
         if let Some(handle) = plugin.spawn(self) {
             self.system_tasks.push(handle);
+            self.msg.send(());
         }
         Ok(())
     }

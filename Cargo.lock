@@ -446,15 +446,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daemonizr"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d84191363b8a64fa704c11fd1b2a09675b47afae795402120578543830b167ee"
-dependencies = [
- "nix",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1276,19 +1267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nix"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f866317acbd3a240710c63f065ffb1e4fd466259045ccb504130b7f668f35c6"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if",
- "libc",
- "memoffset",
-]
-
-[[package]]
 name = "nom"
 version = "7.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1562,7 +1540,6 @@ dependencies = [
  "anyhow",
  "config",
  "crossbeam",
- "daemonizr",
  "flexi_logger",
  "futures",
  "glob",

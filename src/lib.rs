@@ -1,15 +1,11 @@
-use neon::prelude::*;
-pub(crate) mod interface;
+pub mod interface;
 pub(crate) mod system;
 pub(crate) mod system_tasks;
-pub(crate) mod web;
 
-pub use interface::JSSystem;
+use interface::neon_main;
+use neon::prelude::*;
 
 #[neon::main]
-fn main(mut cx: ModuleContext) -> NeonResult<()> {
-    cx.export_function("new_system", JSSystem::js_new)?;
-    cx.export_function("js_execute", JSSystem::js_handle_request)?;
-    cx.export_function("full_db_uri", JSSystem::js_db_uri)?;
-    Ok(())
+pub fn main(cx: ModuleContext) -> NeonResult<()> {
+    neon_main(cx)
 }

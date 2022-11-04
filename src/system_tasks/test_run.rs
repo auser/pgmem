@@ -81,32 +81,33 @@ impl SystemPlugin for TestRun {
         let handle = tokio::task::spawn(async move {
             info!("TestRun Handler task has launched");
 
-            let routes = warp::any().map(|| "Hello From Warp!");
-            let svc = warp::service(routes);
-            let make_svc =
-                warp::hyper::service::make_service_fn(
-                    move |_| async move { Ok::<_, Infallible>(svc) },
-                );
+            // let routes = warp::any().map(|| "Hello From Warp!");
+            // let svc = warp::service(routes);
+            // let make_svc =
+            //     warp::hyper::service::make_service_fn(
+            //         move |_| async move { Ok::<_, Infallible>(svc) },
+            //     );
 
             tokio::select! {
                 Ok(msg) = on_msg.recv() => {
                     info!("Received message: {:?}", msg);
                 }
+                else => {}
             }
 
-            info!("Launching listener");
-            if let Err(error) = warp::hyper::Server::bind(&([127, 0, 0, 1], 3030).into())
-                .serve(make_svc)
-                .with_graceful_shutdown(async {
-                    let _ = on_quit.recv().await;
-                    info!("Quitting")
-                })
-                .await
-            {
-                error!("Listener shutdown poorly: {:#?}", error);
-            } else {
-                info!("Shut down correctly");
-            }
+            // info!("Launching listener");
+            // if let Err(error) = warp::hyper::Server::bind(&([127, 0, 0, 1], 3030).into())
+            //     .serve(make_svc)
+            //     .with_graceful_shutdown(async {
+            //         let _ = on_quit.recv().await;
+            //         info!("Quitting")
+            //     })
+            //     .await
+            // {
+            //     error!("Listener shutdown poorly: {:#?}", error);
+            // } else {
+            //     info!("Shut down correctly");
+            // }
             let _ = do_quit.send(());
 
             Ok(())

@@ -6,6 +6,7 @@ use pg_embed::{
     pg_fetch::{PgFetchSettings, PostgresVersion},
     postgres::{PgEmbed, PgSettings},
 };
+use tokio::runtime::Handle;
 use tracing::*;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -60,8 +61,15 @@ impl ConnectionLock {
 impl Drop for ConnectionLock {
     fn drop(&mut self) {
         info!("Called drop on ConnectionLock");
-        let rt = tokio::runtime::Runtime::new().expect("could not start tokio rt");
-        let _ = rt.block_on(async move { self.cleanup() });
+        // let ct = tokio::runtime::Builder::new_current_thread()
+        //     .enable_all()
+        //     .build()
+        //     .unwrap();
+        let handle = Handle::current();
+        let _ = handle.enter();
+        futures::executor::block_on(self.cleanup());
+        // let rt = tokio::runtime::Runtime::new().expect("could not start tokio rt");
+        // let _ = ct.spawn_blocking(async move || self.cleanup().await);
     }
 }
 
