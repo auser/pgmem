@@ -18,7 +18,7 @@ pub fn hello(mut cx: FunctionContext) -> JsResult<JsString> {
     Ok(cx.string("hello node"))
 }
 
-#[derive()]
+#[derive(Debug)]
 pub struct JSSystem {
     tx: mpsc::Sender<SystemMessage>,
     // db_uri: String,
@@ -45,7 +45,7 @@ impl JSSystem {
         // Next we have to run the execution loop for any tasks in the queue
         // We need to listen on the communication channel to see if there's anything
         // we need to execute
-        let system = block_on(async move { System::initialize().await.unwrap() });
+        let mut system = block_on(async move { System::initialize().await.unwrap() });
         let mut on_quit = system.quit.subscribe();
 
         let manager = async move {
@@ -66,8 +66,8 @@ impl JSSystem {
                     println!("Something sent on the tx channel")
                 }
             }
-            // let res = system.lock().unwrap().cleanup().await;
-            // println!("res: {:#?}", res);
+            let res = &system.cleanup().await;
+            println!("res: {:#?}", res);
             // drop(system);
         };
 
@@ -90,13 +90,34 @@ impl JSSystem {
 
         Ok(server)
     }
+
+    // Idiomatic rust would take an owned `self` to prevent use after close
+    // However, it's not possible to prevent JavaScript from continuing to hold a closed database
+    fn close(&self) -> Result<(), mpsc::error::SendError<SystemMessage>> {
+        let res = block_on(self.tx.send(SystemMessage::Close));
+        res
+    }
+
+    fn send(
+        &self,
+        deferred: Deferred,
+        callback: impl FnOnce(&Channel, Deferred) + Send + 'static,
+    ) -> Result<(), mpsc::error::SendError<SystemMessage>> {
+        let res = block_on(
+            self.tx
+                .send(SystemMessage::Callback(deferred, Box::new(callback))),
+        );
+        res
+    }
 }
 
 impl JSSystem {
     pub fn js_start_db(mut cx: FunctionContext) -> JsResult<JsBox<JSSystem>> {
-        let jssystem =
-            JSSystem::start_db(&mut cx).or_else(|err| cx.throw_error(err.to_string()))?;
-        println!("SYSTEM SERVER: {:#?}", jssystem.handle);
+        let jssystem = JSSystem::start_db(&mut cx).or_else(|err| {
+            println!("ERROR: {:#?}", err);
+            cx.throw_error(err.to_string())
+        })?;
+        println!("SYSTEM SERVER: {:#?}", jssystem);
         Ok(cx.boxed(jssystem))
     }
 

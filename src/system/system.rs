@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    fmt::Debug,
     io::Write,
     path::{Path, PathBuf},
     pin::Pin,
@@ -191,6 +192,22 @@ pub struct System {
     pub system_tasks: Arc<crossbeam::queue::SegQueue<JoinHandle<anyhow::Result<()>>>>,
     pub quit: broadcast::Sender<()>,
     pub msg: broadcast::Sender<()>,
+}
+
+impl Debug for System {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            r#"SYSTEM SERVER
+        dbname: {}
+        running: {}
+        task-count: {}
+        "#,
+            self.dbname,
+            self.running,
+            self.system_tasks.len()
+        )
+    }
 }
 
 impl System {

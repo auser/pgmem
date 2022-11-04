@@ -6,15 +6,15 @@ use std::{
 use futures::stream::AbortHandle;
 use neon::{prelude::*, types::Deferred};
 
-use super::JSSystem;
+use crate::system::System;
 
 pub type SystemCallback = Box<dyn FnOnce(&Channel, Deferred) + Send>;
 
-#[derive()]
+#[derive(Debug)]
 pub struct SystemServer {
     pub handle: RefCell<Option<AbortHandle>>,
     pub tx: tokio::sync::mpsc::Sender<SystemMessage>,
-    pub system: Arc<Mutex<JSSystem>>,
+    pub system: Arc<Mutex<System>>,
 }
 
 impl Finalize for SystemServer {}
