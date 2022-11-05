@@ -42,16 +42,13 @@ impl SystemServer {
 
         let manager = async move {
             let mut on_quit = quit.subscribe();
-            println!("In manager");
             tokio::select! {
                 _ = async {
                     loop {
                         while let Some(msg) = rx.recv().await {
-                            println!("Received a message on rx: {:#?}", msg);
                             match msg {
                                 SystemMessage::Close => {
-                                    let res = quit.send(());
-                                    println!("res on close: {:#?}", res);
+                                    let _ = quit.send(());
                                 },
                                 a => {
                                     println!("Unknown message received: {:?}", a);
@@ -122,17 +119,16 @@ impl SystemServer {
     }
 
     pub fn js_stop_db(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        println!(
-            "js_stop_db called: {:#?}",
-            cx.this().downcast::<JsBox<SystemServer>, _>(&mut cx)
-        );
-        let handle = cx
-            .this()
-            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+        let handle = match cx.this().downcast::<JsBox<SystemServer>, _>(&mut cx) {
+            Err(_) => cx.argument::<JsBox<SystemServer>>(0)?,
+            Ok(v) => v,
+        };
+        // let handle = cx
+        //     .this()
+        //     .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
         // let server = cx.argument::<JsBox<SystemServer>>(0)?;
 
-        // let _ = block_on(server.tx.send(SystemMessage::Close));
-        println!("js_stop_db called");
+        let res = handle.close();
 
         Ok(cx.undefined())
     }

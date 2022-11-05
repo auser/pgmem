@@ -25,17 +25,6 @@ use super::{
     db::{ConfigDatabase, DbPool},
 };
 
-static DEFAULT_CONFIG: &str = r#"run_mode = "Foreground"
-
-[database]
-db_type = "Embedded"
-max_connections = 5
-persistent = true
-root_path = "."
-username = "postgres"
-password = "postgres"
-"#;
-
 pub trait QuitOnError {
     fn quit_on_err(self, quit: &broadcast::Sender<()>) -> Self;
 }
@@ -43,7 +32,6 @@ pub trait QuitOnError {
 impl<S, E> QuitOnError for Result<S, E> {
     fn quit_on_err(self, quit: &broadcast::Sender<()>) -> Self {
         if self.is_err() {
-            error!("Error occurred, sending quit signal");
             let _ = quit.send(());
         }
         self
