@@ -1,13 +1,10 @@
-use futures::{future::abortable, stream::AbortHandle};
+use futures::future::abortable;
 use neon::{prelude::*, types::Deferred};
-use once_cell::sync::OnceCell;
-use std::{
-    cell::RefCell,
-    sync::{Arc, Mutex},
-};
+use std::cell::RefCell;
 use tokio::sync::mpsc;
+use tracing::*;
 
-use crate::{system::System, system_tasks::test_run::TestRun};
+use crate::system::System;
 
 use super::{
     system_server::{SystemMessage, SystemServer},
@@ -34,7 +31,6 @@ impl SystemServer {
         let mut system = block_on(async move { System::initialize().await.unwrap() });
 
         let quit = system.quit.clone();
-        let do_msg = system.msg.clone();
         // let mut system = Arc::new(Mutex::new(system));
 
         let manager = async move {
@@ -49,9 +45,6 @@ impl SystemServer {
                                 }
                                 SystemMessage::Close => {
                                     let _ = quit.send(());
-                                },
-                                a => {
-                                    println!("Unknown message received: {:?}", a);
                                 }
                             }
                         }
@@ -64,9 +57,7 @@ impl SystemServer {
                     println!("Got a message in the loop");
                 }
             };
-            let res = system.cleanup().await;
-            // drop(system);
-            // block_on(manager_system.lock().unwrap().cleanup())
+            let _res = system.cleanup().await;
         };
 
         let (abortable, handle) = abortable(manager);
@@ -123,7 +114,7 @@ impl SystemServer {
             Ok(v) => v,
         };
 
-        let res = handle.close();
+        let _res = handle.close();
 
         Ok(cx.undefined())
     }
@@ -134,14 +125,20 @@ impl SystemServer {
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
 
         let (deferred, promise) = cx.promise();
+        info!("js_new_database");
 
-        handle.send(deferred, move |sys, channel, deferred| {
-            let res = sys.msg.send("newDatabase".to_string());
-            // TODO: wait for the return
-            deferred.settle_with(channel, move |mut cx| -> JsResult<JsValue> {
-                Ok(cx.string("WILL BE A URL").upcast())
-            });
-        });
+        handle
+            .send(deferred, move |sys, channel, deferred| {
+                println!("msg: {:#?}", sys.msg);
+                let res = sys.msg.send("newDatabase".to_string());
+                info!("js_new_database: {:#?}", res);
+                // TODO: wait for the return
+                deferred.settle_with(channel, move |mut cx| -> JsResult<JsValue> {
+                    info!("settle_with");
+                    Ok(cx.string("WILL BE A URL").upcast())
+                });
+            })
+            .into_rejection(&mut cx)?;
 
         Ok(promise)
     }

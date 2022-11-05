@@ -89,8 +89,14 @@ impl SystemPlugin for TestRun {
             //     );
 
             tokio::select! {
-                Ok(msg) = on_msg.recv() => {
-                    info!("Received message: {:?}", msg);
+                _ = async {
+                    loop {
+                        if let Ok(msg) = on_msg.recv().await {
+                            println!("Received a message in TestRun: {}", msg);
+                        }
+                    }
+                }=> {
+                    println!("Something sent on the tx channel");
                 }
                 else => {
                     debug!("Received something else in tokio::select!");

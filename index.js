@@ -1,6 +1,6 @@
 const { promisify } = require("util");
 
-const { start_db, stop_db } = require("./index.node");
+const { start_db, stop_db, new_db } = require("./index.node");
 
 class Database {
   constructor() {
@@ -10,6 +10,10 @@ class Database {
 
   stop_db() {
     stop_db.call(this.db)
+  }
+
+  async new_db() {
+    new_db.call(this.db)
   }
 }
 

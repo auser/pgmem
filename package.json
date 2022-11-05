@@ -8,13 +8,15 @@
     "build-debug": "npm run build --",
     "build-release": "npm run build -- --release",
     "install": "npm run build-release",
-    "test": "cargo test",
+    "test": "jest",
     "clean": "neon clean && rm -rf ./node_modules"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/jest": "^29.2.2",
     "cargo-cp-artifact": "^0.1",
-    "mocha": "^10.1.0"
+    "jest": "^29.2.2",
+    "ts-node": "^10.9.1"
   }
 }
