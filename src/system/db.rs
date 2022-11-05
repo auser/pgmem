@@ -27,12 +27,12 @@ pub struct ConfigDatabase {
 impl Default for ConfigDatabase {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(15),
             db_type: "Embedded".to_string(),
-            root_path: ".".to_string(),
+            root_path: "data".to_string(),
             username: "postgres".to_string(),
-            password: "postgres".to_string(),
-            persistent: false,
+            password: "password".to_string(),
+            persistent: true,
             port: 5432,
             max_connections: 5,
             uri: None,

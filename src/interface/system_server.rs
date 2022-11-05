@@ -15,7 +15,7 @@ pub type SystemCallback = Box<dyn FnOnce(&Channel, Deferred) + Send>;
 pub struct SystemServer {
     pub handle: RefCell<Option<AbortHandle>>,
     pub tx: tokio::sync::mpsc::Sender<SystemMessage>,
-    pub system: Arc<Mutex<System>>,
+    // pub system: Arc<Mutex<System>>,
 }
 
 impl Finalize for SystemServer {}

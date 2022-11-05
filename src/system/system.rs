@@ -211,48 +211,54 @@ impl Debug for System {
 }
 
 impl System {
-    pub async fn run() -> anyhow::Result<Self> {
-        Self::run_with_args(SystemArgs::from_args()).await
-    }
+    // pub async fn run() -> anyhow::Result<Self> {
+    //     Self::run_with_args(SystemArgs::from_args()).await
+    // }
 
-    pub async fn run_with_args(args: SystemArgs) -> anyhow::Result<Self> {
-        let config_path = args.root_dir.join("settings.toml");
-        if let Some(mut config) = SystemConfig::get_or_create(&config_path)? {
-            if let Some(run_mode) = args.run_mode {
-                config.run_mode = run_mode
-            }
+    // pub async fn run_with_args(args: SystemArgs) -> anyhow::Result<Self> {
+    //     let config_path = args.root_dir.join("settings.toml");
+    //     if let Some(mut config) = SystemConfig::get_or_create(&config_path)? {
+    //         if let Some(run_mode) = args.run_mode {
+    //             config.run_mode = run_mode
+    //         }
 
-            Self::run_with_config(args.root_dir.clone(), config).await
-        } else {
-            println!(
-      "No configuration found, wrote out new configuration file at: {:?}, please make edits as necessary and launch again",
-      config_path
-    );
-            Err(anyhow::anyhow!("Retry with config"))
-        }
-    }
+    //         Self::run_with_config(args.root_dir.clone(), config).await
+    //     } else {
+    //         println!(
+    //   "No configuration found, wrote out new configuration file at: {:?}, please make edits as necessary and launch again",
+    //   config_path
+    // );
+    //         Err(anyhow::anyhow!("Retry with config"))
+    //     }
+    // }
 
     pub async fn initialize() -> anyhow::Result<System> {
-        Self::initialize_with_args(SystemArgs::from_args()).await
+        // Self::initialize_with_args(SystemArgs::from_args()).await
+
+        let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let system =
+            Self::initialize_with_config(root_dir.clone(), SystemConfig::default()).await?;
+        Ok(system)
     }
 
-    pub async fn initialize_with_args(args: SystemArgs) -> anyhow::Result<System> {
-        let config_path = args.root_dir.join("settings.toml");
-        if let Some(mut config) = SystemConfig::get_or_create(&config_path)? {
-            if let Some(run_mode) = args.run_mode {
-                config.run_mode = run_mode
-            }
+    // pub async fn initialize_with_args(args: SystemArgs) -> anyhow::Result<System> {
+    //     println!("initialize_with_args => {:#?}", args);
+    //     let config_path = args.root_dir.join("settings.toml");
+    //     if let Some(mut config) = SystemConfig::get_or_create(&config_path)? {
+    //         if let Some(run_mode) = args.run_mode {
+    //             config.run_mode = run_mode
+    //         }
 
-            let system = Self::initialize_with_config(args.root_dir.clone(), config).await?;
-            Ok(system)
-        } else {
-            println!(
-      "No configuration found, wrote out new configuration file at: {:?}, please make edits as necessary and launch again",
-      config_path
-    );
-            Err(anyhow::anyhow!("No configuration file"))
-        }
-    }
+    //         let system = Self::initialize_with_config(args.root_dir.clone(), config).await?;
+    //         Ok(system)
+    //     } else {
+    //         println!(
+    //   "No configuration found, wrote out new configuration file at: {:?}, please make edits as necessary and launch again",
+    //   config_path
+    // );
+    //         Err(anyhow::anyhow!("No configuration file"))
+    //     }
+    // }
 
     pub async fn initialize_with_config(
         root_path: PathBuf,
@@ -292,17 +298,6 @@ impl System {
         info!("System running completed, no system tasks remaining, shutting down database");
         system.cleanup().await?;
         Ok(system)
-    }
-
-    pub async fn run_from_init(system: &mut System) -> anyhow::Result<()> {
-        info!(
-            "Running system, {} system tasks upon startup",
-            system.system_tasks.len()
-        );
-        system.run_loop().await?;
-        info!("System running completed, no system tasks remaining, shutting down database");
-        system.cleanup().await?;
-        Ok(())
     }
 
     pub async fn cleanup(&mut self) -> anyhow::Result<()> {

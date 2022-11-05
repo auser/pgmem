@@ -97,7 +97,7 @@ fn get_fetch_settings(host: String) -> anyhow::Result<PgFetchSettings> {
         operating_system,
         architecture,
         // Yay hardcoding because can't select a custom version that PgEmbed doesn't have hardcoded in for some reason, 13 is old but may as well as its the latest for pg_embed...
-        version: PostgresVersion("14.5.0"),
+        version: PostgresVersion("14.3.0"),
     })
 }
 
@@ -119,9 +119,21 @@ impl ConnectionType {
                 info!("initializing an embedded postgresql database");
                 let database_dir = root_path.join("db").to_owned();
 
+                if database_dir.exists() {
+                    let database_dir_str = database_dir.to_str().unwrap();
+                    if database_dir.is_dir() {
+                        if database_dir_str != "/" && database_dir_str != env!("CARGO_MANIFEST_DIR")
+                        {
+                            fs::remove_dir_all(database_dir_str)?;
+                        }
+                    } else {
+                        fs::remove_file(database_dir_str)?;
+                    }
+                }
+                fs::create_dir_all(&database_dir)?;
+
                 let pg_settings = PgSettings {
-                    // Why are these utf-8 strings instead of `Path`/`PathBuf`'s?!?
-                    database_dir: PathBuf::from(database_dir.clone()),
+                    database_dir: database_dir.canonicalize().unwrap().clone(),
                     // Why is port an `i16` instead of a `u16`?!?
                     port: *port,
                     user: username.to_owned(),
@@ -131,8 +143,6 @@ impl ConnectionType {
                     migration_dir: None,
                     auth_method: PgAuthMethod::Plain,
                 };
-
-                let _ = fs::remove_dir_all(database_dir);
 
                 info!("Initializing embedded postgresql database");
                 let mut pg =
@@ -145,8 +155,6 @@ impl ConnectionType {
                     };
 
                 info!("Setting up embedded postgresql database");
-                // Download, unpack, create password file and database cluster
-                // This is the next 3 lines: pg.setup().await?;
                 match pg.setup().await {
                     Ok(_) => {}
                     Err(e) => {

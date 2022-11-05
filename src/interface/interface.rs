@@ -35,10 +35,10 @@ impl SystemServer {
         // Next we have to run the execution loop for any tasks in the queue
         // We need to listen on the communication channel to see if there's anything
         // we need to execute
-        let system = block_on(async move { System::initialize().await.unwrap() });
+        let mut system = block_on(async move { System::initialize().await.unwrap() });
 
         let quit = system.quit.clone();
-        let manager_system = Arc::new(Mutex::new(system));
+        // let manager_system = Arc::new(Mutex::new(system));
 
         let manager = async move {
             let mut on_quit = quit.subscribe();
@@ -46,29 +46,31 @@ impl SystemServer {
             tokio::select! {
                 _ = async {
                     loop {
-                        let msg = on_quit.recv().await;
-                        println!("msg: {:?}", msg);
-                        // let _ = manager_system.lock().unwrap().run_loop().await;
-                    }
-                } => {
-                    // Break out
-                }
-                msg = rx.recv() => {
-                    println!("Something sent on the tx channel: {:#?}", msg);
-                    match msg {
-                        Some(SystemMessage::Close) => {
-                            quit.send(());
-                        },
-                        None => {},
-                        _a => {
-                            unimplemented!();
+                        while let Some(msg) = rx.recv().await {
+                            println!("Received a message on rx: {:#?}", msg);
+                            match msg {
+                                SystemMessage::Close => {
+                                    let res = quit.send(());
+                                    println!("res on close: {:#?}", res);
+                                },
+                                a => {
+                                    println!("Unknown message received: {:?}", a);
+                                }
+                            }
                         }
                     }
+                }=> {
+                    println!("Something sent on the tx channel");
+                }
+                _ = on_quit.recv()  => {
+                    // Break out
+                    println!("Got a message in the loop");
                 }
             };
-            // let res = system.cleanup().await;
-            // println!("res: {:#?}", res);
+            let res = system.cleanup().await;
+            println!("res: {:#?}", res);
             // drop(system);
+            // block_on(manager_system.lock().unwrap().cleanup())
         };
 
         let (abortable, handle) = abortable(manager);
@@ -84,9 +86,10 @@ impl SystemServer {
 
         let _handle = rt.spawn(abortable);
         Ok(Self {
+            // name: "Bob".to_string(),
             handle: RefCell::new(Some(handle)),
             tx,
-            system: manager_system.clone(),
+            // system: manager_system.clone(),
         })
     }
     // Idiomatic rust would take an owned `self` to prevent use after close
@@ -113,11 +116,22 @@ impl SystemServer {
             SystemServer::new(&mut cx).or_else(|err| cx.throw_error(err.to_string()))?;
         Ok(cx.boxed(system_server))
     }
-    pub fn js_stop_db(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let server = cx.argument::<JsBox<SystemServer>>(0)?;
 
-        println!("js_stop_db called");
-        let _ = block_on(server.tx.send(SystemMessage::Close));
+    pub fn js_send(mut cx: FunctionContext) -> JsResult<JsString> {
+        Ok(cx.string("Hello"))
+    }
+
+    pub fn js_stop_db(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        println!(
+            "js_stop_db called: {:#?}",
+            cx.this().downcast::<JsBox<SystemServer>, _>(&mut cx)
+        );
+        let handle = cx
+            .this()
+            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+        // let server = cx.argument::<JsBox<SystemServer>>(0)?;
+
+        // let _ = block_on(server.tx.send(SystemMessage::Close));
         println!("js_stop_db called");
 
         Ok(cx.undefined())

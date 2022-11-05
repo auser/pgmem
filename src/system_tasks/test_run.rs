@@ -92,7 +92,9 @@ impl SystemPlugin for TestRun {
                 Ok(msg) = on_msg.recv() => {
                     info!("Received message: {:?}", msg);
                 }
-                else => {}
+                else => {
+                    debug!("Received something else in tokio::select!");
+                }
             }
 
             // info!("Launching listener");
