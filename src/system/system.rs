@@ -158,12 +158,12 @@ impl SystemConfig {
             let system_config = s.into();
             Ok(Some(system_config))
         } else {
-            let mut file = std::fs::File::create(path)?;
-            file.write_all(DEFAULT_CONFIG.as_bytes())?;
-            file.write_all("\n".as_bytes())?;
-            file.flush()?;
-            drop(file);
-            Ok(None)
+            // let mut file = std::fs::File::create(path)?;
+            // file.write_all(DEFAULT_CONFIG.as_bytes())?;
+            // file.write_all("\n".as_bytes())?;
+            // file.flush()?;
+            // drop(file);
+            Ok(Some(SystemConfig::default()))
         }
     }
 }
@@ -172,14 +172,13 @@ pub struct System {
     config: SystemConfig,
     pub root_path: PathBuf,
     db_lock: ConnectionLock,
-    pub dbname: String,
     pub db_pool: DbPool,
     pub running: bool,
     /// These tasks are ones that keep the system running, useful for daemon's, TUI's, network, etc.
     /// These tasks should *ALWAYS* quit when `quit` is broadcast on or the system may not ever die.
     pub system_tasks: Arc<crossbeam::queue::SegQueue<JoinHandle<anyhow::Result<()>>>>,
     pub quit: broadcast::Sender<()>,
-    pub msg: broadcast::Sender<()>,
+    pub msg: broadcast::Sender<String>,
 }
 
 impl Debug for System {
@@ -187,11 +186,9 @@ impl Debug for System {
         write!(
             f,
             r#"SYSTEM SERVER
-        dbname: {}
         running: {}
         task-count: {}
         "#,
-            self.dbname,
             self.running,
             self.system_tasks.len()
         )
@@ -259,7 +256,6 @@ impl System {
         let (quit, _recv_quit) = broadcast::channel(1);
         let (msg, _recv_msg) = broadcast::channel(10);
         let (db_lock, db_pool) = config.database.create_database_pool().await?;
-        let dbname = uuid::Uuid::new_v4().to_string();
         let mut system = System {
             root_path,
             config,
@@ -268,7 +264,6 @@ impl System {
             system_tasks: Default::default(),
             quit,
             msg,
-            dbname,
             running: false,
         };
         system.startup_systems().await?;
@@ -356,15 +351,7 @@ impl System {
         Ok(())
     }
 
-    pub fn add_task<C: SystemPlugin>(&mut self, plugin: C) -> anyhow::Result<()> {
-        if let Some(handle) = plugin.spawn(self) {
-            self.system_tasks.push(handle);
-            self.msg.send(());
-        }
-        Ok(())
-    }
-
-    pub fn as_uri(&self) -> anyhow::Result<String> {
-        Ok(self.db_lock.full_db_uri(self.dbname.as_str()))
+    pub fn as_uri(&self, dbname: String) -> anyhow::Result<String> {
+        Ok(self.db_lock.full_db_uri(dbname.as_str()))
     }
 }

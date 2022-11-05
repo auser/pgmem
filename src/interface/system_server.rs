@@ -9,7 +9,7 @@ use neon::{prelude::*, types::Deferred};
 
 use crate::system::System;
 
-pub type SystemCallback = Box<dyn FnOnce(&Channel, Deferred) + Send>;
+pub type SystemCallback = Box<dyn FnOnce(&mut System, &Channel, Deferred) + Send>;
 
 #[derive(Debug)]
 pub struct SystemServer {

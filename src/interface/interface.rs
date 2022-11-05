@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-use crate::system::System;
+use crate::{system::System, system_tasks::test_run::TestRun};
 
 use super::{
     system_server::{SystemMessage, SystemServer},
@@ -29,16 +29,13 @@ impl SystemServer {
         //     callback: Arc::new(cx.argument::<JsFunction>(0)?.root(&mut cx)),
         // };
         let (tx, mut rx) = mpsc::channel::<SystemMessage>(32);
-        // let channel = cx.channel();
+        let channel = cx.channel();
 
-        // We have a few things going on here, we need to start up the database
-        // Next we have to run the execution loop for any tasks in the queue
-        // We need to listen on the communication channel to see if there's anything
-        // we need to execute
         let mut system = block_on(async move { System::initialize().await.unwrap() });
 
         let quit = system.quit.clone();
-        // let manager_system = Arc::new(Mutex::new(system));
+        let do_msg = system.msg.clone();
+        // let mut system = Arc::new(Mutex::new(system));
 
         let manager = async move {
             let mut on_quit = quit.subscribe();
@@ -47,6 +44,9 @@ impl SystemServer {
                     loop {
                         while let Some(msg) = rx.recv().await {
                             match msg {
+                                SystemMessage::Callback(deferred, f) => {
+                                    f(&mut system, &channel, deferred);
+                                }
                                 SystemMessage::Close => {
                                     let _ = quit.send(());
                                 },
@@ -65,7 +65,6 @@ impl SystemServer {
                 }
             };
             let res = system.cleanup().await;
-            println!("res: {:#?}", res);
             // drop(system);
             // block_on(manager_system.lock().unwrap().cleanup())
         };
@@ -86,7 +85,7 @@ impl SystemServer {
             // name: "Bob".to_string(),
             handle: RefCell::new(Some(handle)),
             tx,
-            // system: manager_system.clone(),
+            // system: system.clone(),
         })
     }
     // Idiomatic rust would take an owned `self` to prevent use after close
@@ -98,7 +97,7 @@ impl SystemServer {
     fn send(
         &self,
         deferred: Deferred,
-        callback: impl FnOnce(&Channel, Deferred) + Send + 'static,
+        callback: impl FnOnce(&mut System, &Channel, Deferred) + Send + 'static,
     ) -> Result<(), mpsc::error::SendError<SystemMessage>> {
         block_on(
             self.tx
@@ -123,13 +122,50 @@ impl SystemServer {
             Err(_) => cx.argument::<JsBox<SystemServer>>(0)?,
             Ok(v) => v,
         };
-        // let handle = cx
-        //     .this()
-        //     .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
-        // let server = cx.argument::<JsBox<SystemServer>>(0)?;
 
         let res = handle.close();
 
         Ok(cx.undefined())
+    }
+
+    pub fn js_new_database(mut cx: FunctionContext) -> JsResult<JsPromise> {
+        let handle = cx
+            .this()
+            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+
+        let (deferred, promise) = cx.promise();
+
+        handle.send(deferred, move |sys, channel, deferred| {
+            let res = sys.msg.send("newDatabase".to_string());
+            // TODO: wait for the return
+            deferred.settle_with(channel, move |mut cx| -> JsResult<JsValue> {
+                Ok(cx.string("WILL BE A URL").upcast())
+            });
+        });
+
+        Ok(promise)
+    }
+}
+
+trait SendResultExt {
+    // Sending a query closure to execute may fail if the channel has been closed.
+    // This method converts the failure into a promise rejection.
+    fn into_rejection<'a, C: Context<'a>>(self, cx: &mut C) -> NeonResult<()>;
+}
+
+impl SendResultExt for Result<(), mpsc::error::SendError<SystemMessage>> {
+    fn into_rejection<'a, C: Context<'a>>(self, cx: &mut C) -> NeonResult<()> {
+        self.or_else(|err| {
+            let msg = err.to_string();
+
+            match err.0 {
+                SystemMessage::Callback(deferred, _) => {
+                    let err = cx.error(msg)?;
+                    deferred.reject(cx, err);
+                    Ok(())
+                }
+                SystemMessage::Close => cx.throw_error("Expected SystemMessage::Callback"),
+            }
+        })
     }
 }
