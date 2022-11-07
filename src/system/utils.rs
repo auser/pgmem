@@ -23,6 +23,7 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 pub fn read_all_migrations(root_path: PathBuf) -> String {
+    println!("read_all_migrations in : {:?}", root_path);
     let mut sql = String::new();
     let pattern = String::from(root_path.join("**/*.sql").to_str().unwrap());
     info!("Looking in directory: {:?}", pattern);

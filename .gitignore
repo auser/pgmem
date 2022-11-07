@@ -5,3 +5,5 @@ index.node
 npm-debug.log*
 data
 logs
+db.pwfile
+db/

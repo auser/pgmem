@@ -1,55 +1,27 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use anyhow::bail;
-use futures::executor::ThreadPool;
-use tokio::{runtime::Builder, sync::broadcast};
 use tracing::*;
 
-use super::{
-    config::ConfigDatabase,
-    db::{DBLock, DbPool, DB},
-    logger,
-    system_server::SystemMessage,
-};
-
-#[derive(Debug, Clone)]
-pub enum SystemAction {
-    Start,
-    Stop,
-}
+use super::{config::ConfigDatabase, db::DB, logger};
 
 pub struct SystemInner {
     pub db_lock: Arc<Mutex<DB>>,
     pub running: bool,
-    pub msg: broadcast::Sender<SystemAction>,
 }
 
 impl SystemInner {
     pub async fn new() -> Self {
-        let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let (msg, _recv_msg) = broadcast::channel(10);
+        // let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         // Make configurable?
         let db_lock = Arc::new(Mutex::new(
             DB::new_embedded(ConfigDatabase::default()).await,
         ));
         let running = false;
-        Self {
-            db_lock,
-            running,
-            msg,
-        }
+        Self { db_lock, running }
     }
 
-    async fn process(&mut self, msg: SystemAction) -> anyhow::Result<bool> {
-        match msg {
-            SystemAction::Start => self.start().await,
-            SystemAction::Stop => self.stop().await,
-        }
-    }
     pub async fn start(&mut self) -> anyhow::Result<bool> {
         // Incase we're already running, don't start
         if !self.running {
@@ -106,13 +78,19 @@ impl SystemInner {
     }
 }
 
+impl Drop for SystemInner {
+    fn drop(&mut self) {
+        drop(&self.db_lock);
+    }
+}
+
 pub struct System {
     inner: Arc<Mutex<SystemInner>>,
 }
 
 impl System {
     pub async fn initialize() -> anyhow::Result<System> {
-        let _ = logger::init_logging(None);
+        let _logger = logger::init_logging(None);
 
         let inner = SystemInner::new().await;
         let inner = Arc::new(Mutex::new(inner));
@@ -133,35 +111,6 @@ impl System {
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         let mut inner = self.inner.lock().unwrap();
         Ok(inner.create_new_db(name).await?)
-    }
-
-    pub async fn run_loop(self) -> anyhow::Result<bool> {
-        let mut inner = self.inner.lock().unwrap();
-        let msg = inner.msg.clone();
-        let mut on_msg = msg.subscribe();
-
-        let runtime = Builder::new_multi_thread()
-            .worker_threads(5)
-            .thread_name("worker-thread")
-            .thread_stack_size(3 * 1024 * 1024)
-            .build()
-            .unwrap();
-
-        runtime.block_on(async move {
-            while let msg = on_msg.recv().await {
-                let _res = match msg {
-                    Ok(msg) => match msg {
-                        SystemAction::Stop => Ok(inner.stop().await),
-                        SystemAction::Start => Ok(inner.start().await),
-                    },
-                    Err(e) => {
-                        error!("Error in run_loop: {:?}", e.to_string());
-                        Err(e)
-                    }
-                };
-            }
-        });
-        Ok(true)
     }
 }
 

@@ -1,5 +1,4 @@
 use anyhow::bail;
-use glob::glob;
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
     pg_fetch::{PgFetchSettings, PostgresVersion},
@@ -8,12 +7,9 @@ use pg_embed::{
 use portpicker::pick_unused_port;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
-    borrow::Borrow,
     fmt::Debug,
-    fs::{self, File},
-    io::Read,
+    fs::{self},
     path::PathBuf,
-    sync::Arc,
     time::Duration,
 };
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System as SysInfoSystem, SystemExt};
@@ -27,7 +23,8 @@ pub type DbLock = DBLock;
 #[derive(Debug)]
 pub struct DB {
     connection: DBLock,
-    sql: String,
+    // root_path: PathBuf,
+    // migration_sql: String,
     pub db_pool: Option<DbPool>,
 }
 
@@ -35,12 +32,14 @@ impl DB {
     pub async fn new_external(root_path: String, uri: impl Into<String>) -> Self {
         let db_type = DBType::External(uri.into());
         let connection = db_type.init_conn_string().await.unwrap();
+        let root_path = PathBuf::from(root_path);
+        let migration_sql = read_all_migrations(root_path.clone());
         // let (connection, db_pool): (DbLock, DbPool) = db_type.create_database_pool().await.unwrap();
-        let sql = read_all_migrations(PathBuf::from(root_path));
         Self {
             connection,
-            sql,
+            // root_path: root_path.clone(),
             db_pool: None,
+            // migration_sql,
         }
     }
 
@@ -51,8 +50,9 @@ impl DB {
             None => pick_unused_port().expect("Unable to pick an unused port") as i16,
             Some(p) => p as i16,
         };
-        let root_path = PathBuf::from(config.root_path.unwrap());
-        let sql = read_all_migrations(root_path.clone());
+        let cfg_root_path = config.root_path.unwrap();
+        let root_path = PathBuf::from(&cfg_root_path);
+        let _migration_sql = read_all_migrations(root_path.clone());
         let db_type = DBType::Embedded {
             root_path,
             port,
@@ -66,8 +66,9 @@ impl DB {
         // let (connection, db_pool): (DbLock, DbPool) = db_type.create_database_pool().await.unwrap();
         Self {
             connection,
-            sql,
+            // root_path: PathBuf::from(cfg_root_path),
             db_pool: None,
+            // migration_sql,
         }
     }
 
@@ -103,14 +104,15 @@ impl DB {
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
-        debug!("Creating new database");
-        let conn_url = self.connection.create_new_db(name).await?;
-        debug!("New database created. Now running sql migration");
-        let sql = self.sql.clone();
-
-        let db_pool = &self.db_pool.clone().unwrap();
-        let _res = sqlx::query(&sql).fetch(db_pool);
-        debug!("Migration ran return");
+        info!("Creating new database");
+        let (db_name, conn_url) = self.connection.create_new_db(name).await?;
+        info!(
+            "New database created. Now running sql migration: {:?}",
+            db_name
+        );
+        self.connection.migrate(db_name).await?;
+        // // sqlx::migrate!(self.root_path.as_str());
+        info!("Migration ran return");
         Ok(conn_url)
     }
 
@@ -155,12 +157,15 @@ impl DBLock {
 
     async fn start(&mut self) -> anyhow::Result<bool> {
         match self {
-            DBLock::External(s) => Ok(true),
+            DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
                 info!("Starting embedded postgresql database");
                 // start postgresql database
                 match pg.start_db().await {
-                    Ok(e) => Ok(true),
+                    Ok(e) => {
+                        error!("Error when starting database: {:?}", e);
+                        Ok(true)
+                    }
                     Err(e) => {
                         error!("An error occurred starting database: {:?}", e);
                         return Err(anyhow::anyhow!(e.to_string()));
@@ -170,26 +175,56 @@ impl DBLock {
         }
     }
 
-    async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
+    async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<(String, String)> {
         let name = name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         match self {
-            DBLock::External(s) => {
+            DBLock::External(_s) => {
                 // TODO: Implement, maybe?
                 Err(anyhow::anyhow!(
                     "Not implemented for external databases, yet"
                 ))
             }
             DBLock::Embedded(pg) => {
-                pg.create_database(&name).await;
+                info!("Creating new database");
+                let res = pg.create_database(&name).await;
+                info!("Create database result: {:?}", res);
                 let conn_url = pg.full_db_uri(&name);
-                Ok(conn_url)
+                Ok((name, conn_url))
+            }
+        }
+    }
+
+    async fn migrate(&mut self, name: String) -> anyhow::Result<()> {
+        // let m = Migrator::new(Path::new(self.root_path.as_path())).await?;
+
+        // let db_pool = &self.db_pool.clone().unwrap();
+        // let _res = m.run(db_pool).await?;
+        // let sql = self.migration_sql.clone();
+
+        // let _res = sqlx::query(&sql).execute(db_pool).await;
+        match self {
+            DBLock::External(_s) => {
+                // TODO: implement, maybe?
+                Err(anyhow::anyhow!(
+                    "Not implemented for external databases yet"
+                ))
+            }
+            DBLock::Embedded(pg) => {
+                info!("Migrating {} in embedded db", &name);
+                match pg.migrate(&name).await {
+                    Ok(r) => Ok(r),
+                    Err(e) => {
+                        error!("Error occurrend when migrating: {:?}", e.to_string());
+                        Err(anyhow::anyhow!(e.to_string()))
+                    }
+                }
             }
         }
     }
 
     async fn stop(&mut self) -> anyhow::Result<bool> {
         match self {
-            DBLock::External(s) => Ok(true),
+            DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
                 info!("Starting embedded postgresql database");
                 // start postgresql database
@@ -210,7 +245,7 @@ impl<'a> Drop for DBLock {
         info!("Called drop on ConnectionLock");
         let handle = Handle::current();
         let _ = handle.enter();
-        futures::executor::block_on(self.cleanup());
+        let _ = futures::executor::block_on(self.cleanup());
     }
 }
 
@@ -270,7 +305,7 @@ impl DBType {
                     password: password.to_owned(),
                     persistent: *persistent,
                     timeout: Some(*timeout),
-                    migration_dir: None,
+                    migration_dir: Some(root_path.into()),
                     auth_method: PgAuthMethod::Plain,
                 };
 

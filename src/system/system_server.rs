@@ -1,14 +1,10 @@
-use std::default;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use std::{fmt::Debug, sync::mpsc, thread};
 
-use futures::TryFutureExt;
 use neon::event::Channel;
 use neon::{prelude::*, types::Deferred};
 use tokio::runtime::Handle;
 use tracing::*;
-
-use crate::system;
 
 use super::system::System;
 use super::utils::{block_on, runtime};
@@ -51,7 +47,7 @@ impl SystemServer {
         let channel = cx.channel();
 
         let rt = runtime(cx).unwrap(); //.unwrap_or_else(|err| anyhow::anyhow!(err.to_string()));
-        let mut system = rt.block_on(async move { System::initialize().await.unwrap() });
+        let system = rt.block_on(async move { System::initialize().await.unwrap() });
         // We need a channel for communication back to JS
         let mut sys = Arc::new(Mutex::new(system));
 
@@ -59,7 +55,6 @@ impl SystemServer {
 
         rt.spawn(async move {
             while let Some(msg) = rx.recv().await {
-                println!("thread got a message: {:?}", msg);
                 match msg {
                     SystemMessage::Callback(deferred, f) => {
                         f(&mut sys, &channel, deferred);
@@ -74,6 +69,7 @@ impl SystemServer {
 
     // Idiomatic rust would take an owned `self` to prevent use after close
     // However, it's not possible to prevent JavaScript from continuing to hold a closed database
+    #[allow(unused)]
     fn close(&self) -> Result<(), tokio::sync::mpsc::error::SendError<SystemMessage>> {
         block_on(self.tx.send(SystemMessage::Close))
     }
