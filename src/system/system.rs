@@ -64,6 +64,7 @@ impl SystemInner {
             self.start().await?;
         }
         info!("Dropping database: {}", name);
+        println!("Dropping database: {}", name);
         match self.db_lock.lock().unwrap().drop_database(name).await {
             Err(e) => {
                 error!("Unable to drop database: {:?}", e.to_string());

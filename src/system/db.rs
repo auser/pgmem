@@ -104,6 +104,7 @@ impl DB {
 
     pub async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
         info!("Dropping database {}", db_name);
+        println!("Dropping database {}", db_name);
         match self.connection.drop_database(db_name).await {
             Err(e) => {
                 error!("Error dropping database: {:?}", e.to_string());
@@ -206,14 +207,19 @@ impl DBLock {
         match self {
             DBLock::External(_s) => {
                 // TODO: implement, maybe?
+                drop(pool);
                 Err(anyhow::anyhow!(
                     "Not implemented for external databases yet"
                 ))
             }
             DBLock::Embedded(_pg) => match pool.execute(sql.as_str()).await {
-                Ok(_r) => Ok(()),
+                Ok(_r) => {
+                    drop(pool);
+                    Ok(())
+                }
                 Err(e) => {
                     error!("Error occurrend when migrating: {:?}", e.to_string());
+                    drop(pool);
                     Err(anyhow::anyhow!(e.to_string()))
                 }
             },
@@ -228,7 +234,10 @@ impl DBLock {
                     error!("Error occurred dropping database: {:?}", e.to_string());
                     return Err(anyhow::anyhow!(e.to_string()));
                 }
-                Ok(_) => Ok(()),
+                Ok(_) => {
+                    info!("Dropped database in DBLock: {}", db_name);
+                    Ok(())
+                }
             },
         }
     }

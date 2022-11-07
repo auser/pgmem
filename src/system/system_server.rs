@@ -193,11 +193,13 @@ impl SystemServer {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
+                println!("Dropping database");
                 let res = futures::executor::block_on(sys.drop_database(db_name));
+                println!("Dropped database");
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {
-                        Err(e) => Ok(cx.boolean(false)),
+                        Err(_e) => Ok(cx.boolean(false)),
                         Ok(_) => Ok(cx.boolean(true)),
                     }
                 });
