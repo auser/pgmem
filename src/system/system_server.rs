@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use neon::event::Channel;
 use neon::{prelude::*, types::Deferred};
 use tokio::runtime::Handle;
+use tokio::task::JoinHandle;
 use tracing::*;
 
 use super::system::System;
@@ -31,6 +32,7 @@ impl Debug for SystemMessage {
 
 #[derive(Debug)]
 pub struct SystemServer {
+    handle: JoinHandle<()>,
     tx: tokio::sync::mpsc::Sender<SystemMessage>,
 }
 
@@ -53,7 +55,7 @@ impl SystemServer {
 
         // system.run_loop().await;
 
-        rt.spawn(async move {
+        let handle = rt.spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     SystemMessage::Callback(deferred, f) => {
@@ -64,7 +66,7 @@ impl SystemServer {
             }
         });
 
-        Ok(Self { tx })
+        Ok(Self { tx, handle })
     }
 
     // Idiomatic rust would take an owned `self` to prevent use after close
@@ -83,6 +85,13 @@ impl SystemServer {
             self.tx
                 .send(SystemMessage::Callback(deferred, Box::new(callback))),
         )
+    }
+}
+
+impl Drop for SystemServer {
+    fn drop(&mut self) {
+        let _ = self.close();
+        self.handle.abort();
     }
 }
 
@@ -163,6 +172,33 @@ impl SystemServer {
                     match res {
                         Err(e) => Ok(cx.string(e.to_string())),
                         Ok(conn_url) => Ok(cx.string(conn_url)),
+                    }
+                });
+            })
+            .into_rejection(&mut cx)?;
+
+        Ok(promise)
+    }
+
+    pub fn js_drop_database(mut cx: FunctionContext) -> JsResult<JsPromise> {
+        let (deferred, promise) = cx.promise();
+        let system_server = cx
+            .this()
+            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+
+        let db_name = cx.argument::<JsString>(0)?.value(&mut cx);
+
+        system_server
+            .send(deferred, move |sys, channel, deferred| {
+                let mut sys = sys.lock().unwrap();
+                let handle = Handle::current();
+                let _ = handle.enter();
+                let res = futures::executor::block_on(sys.drop_database(db_name));
+
+                deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
+                    match res {
+                        Err(e) => Ok(cx.boolean(false)),
+                        Ok(_) => Ok(cx.boolean(true)),
                     }
                 });
             })

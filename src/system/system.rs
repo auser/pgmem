@@ -46,7 +46,6 @@ impl SystemInner {
             self.start().await?;
         }
         info!("Creating new database");
-        println!("create_new_db asdjfkasjdkfjaskdfajsdf");
         match self.db_lock.lock().unwrap().create_new_db(name).await {
             // match self.db_lock.create_new_db(name).await {
             Err(e) => {
@@ -54,10 +53,23 @@ impl SystemInner {
                 bail!(e.to_string())
             }
             Ok(res) => {
-                println!("create_new_db asdjfkasjdkfjaskdfajsdf: {:#?}", res);
                 info!("Created new database: {:?}", res);
                 Ok(res)
             }
+        }
+    }
+
+    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
+        if !self.running {
+            self.start().await?;
+        }
+        info!("Dropping database: {}", name);
+        match self.db_lock.lock().unwrap().drop_database(name).await {
+            Err(e) => {
+                error!("Unable to drop database: {:?}", e.to_string());
+                bail!(e.to_string())
+            }
+            Ok(_) => Ok(()),
         }
     }
 
@@ -114,6 +126,11 @@ impl System {
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         let mut inner = self.inner.lock().unwrap();
         Ok(inner.create_new_db(name).await?)
+    }
+
+    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        Ok(inner.drop_database(name).await?)
     }
 }
 

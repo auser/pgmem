@@ -36,12 +36,12 @@ impl Default for ConfigDatabase {
     fn default() -> Self {
         Self {
             db_type: "Embedded".to_string(),
-            uri: "localhost".to_string(),
-            timeout: Some(Duration::from_secs(15)),
+            uri: "127.0.0.1".to_string(),
+            timeout: Some(Duration::from_secs(5)),
             root_path: Some(".".to_string()),
             username: Some("postgres".to_string()),
             password: Some("postgres".to_string()),
-            persistent: Some(true),
+            persistent: Some(false),
             port: Some(5433),
             // max_connections: 5,
             host: Some("https://repo1.maven.org".to_string()),
