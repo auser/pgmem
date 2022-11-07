@@ -8,7 +8,7 @@
     "build-debug": "npm run build --",
     "build-release": "npm run build -- --release",
     "install": "npm run build-release",
-    "test": "jest",
+    "test": "jest --runInBand --forceExit",
     "clean": "neon clean && rm -rf ./node_modules"
   },
   "author": "",

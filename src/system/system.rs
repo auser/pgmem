@@ -10,7 +10,7 @@ use tracing::*;
 
 use super::{
     config::ConfigDatabase,
-    db::{DBLock, DB},
+    db::{DBLock, DbPool, DB},
     logger,
     system_server::SystemMessage,
 };
@@ -69,6 +69,23 @@ impl SystemInner {
         }
     }
 
+    pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
+        if !self.running {
+            self.start().await?;
+        }
+        match self.db_lock.lock().unwrap().create_new_db(name).await {
+            // match self.db_lock.create_new_db(name).await {
+            Err(e) => {
+                error!("Unable to create a new database: {:?}", e.to_string());
+                bail!(e.to_string())
+            }
+            Ok(res) => {
+                info!("Created new database: {:?}", res);
+                Ok(res)
+            }
+        }
+    }
+
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         // Incase we're not running, don't stop
         if self.running {
@@ -111,6 +128,11 @@ impl System {
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         let mut inner = self.inner.lock().unwrap();
         Ok(inner.stop().await?)
+    }
+
+    pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
+        let mut inner = self.inner.lock().unwrap();
+        Ok(inner.create_new_db(name).await?)
     }
 
     pub async fn run_loop(self) -> anyhow::Result<bool> {

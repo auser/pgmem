@@ -128,8 +128,6 @@ impl SystemServer {
 
     pub fn js_stop(mut cx: FunctionContext) -> JsResult<JsPromise> {
         let (deferred, promise) = cx.promise();
-        // let system_server = cx.argument::<JsBox<SystemServer>>(0)?;
-        // let system_server = cx.argument::<JsBox<SystemServer>>(0)?;
         let system_server = cx
             .this()
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
@@ -145,6 +143,31 @@ impl SystemServer {
                 info!("In start: {:?}", res);
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     Ok(cx.boolean(true))
+                });
+            })
+            .into_rejection(&mut cx)?;
+
+        Ok(promise)
+    }
+
+    pub fn js_create_new_db(mut cx: FunctionContext) -> JsResult<JsPromise> {
+        let (deferred, promise) = cx.promise();
+        let system_server = cx
+            .this()
+            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+
+        system_server
+            .send(deferred, move |sys, channel, deferred| {
+                let mut sys = sys.lock().unwrap();
+                let handle = Handle::current();
+                let _ = handle.enter();
+                let res = futures::executor::block_on(sys.create_new_db(None));
+
+                deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
+                    match res {
+                        Err(e) => Ok(cx.string(e.to_string())),
+                        Ok(conn_url) => Ok(cx.string(conn_url)),
+                    }
                 });
             })
             .into_rejection(&mut cx)?;

@@ -1,27 +1,47 @@
 use anyhow::bail;
+use glob::glob;
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
     pg_fetch::{PgFetchSettings, PostgresVersion},
     postgres::{PgEmbed, PgSettings},
 };
 use portpicker::pick_unused_port;
-use std::{fmt::Debug, fs, path::PathBuf, time::Duration};
+use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::{
+    borrow::Borrow,
+    fmt::Debug,
+    fs::{self, File},
+    io::Read,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System as SysInfoSystem, SystemExt};
 use tokio::runtime::Handle;
 use tracing::*;
 
-use super::config::ConfigDatabase;
+use super::{config::ConfigDatabase, utils::read_all_migrations};
+pub type DbPool = PgPool;
+pub type DbLock = DBLock;
 
 #[derive(Debug)]
 pub struct DB {
     connection: DBLock,
+    sql: String,
+    pub db_pool: Option<DbPool>,
 }
 
 impl DB {
-    pub async fn new_external(uri: impl Into<String>) -> Self {
+    pub async fn new_external(root_path: String, uri: impl Into<String>) -> Self {
         let db_type = DBType::External(uri.into());
         let connection = db_type.init_conn_string().await.unwrap();
-        Self { connection }
+        // let (connection, db_pool): (DbLock, DbPool) = db_type.create_database_pool().await.unwrap();
+        let sql = read_all_migrations(PathBuf::from(root_path));
+        Self {
+            connection,
+            sql,
+            db_pool: None,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -31,8 +51,10 @@ impl DB {
             None => pick_unused_port().expect("Unable to pick an unused port") as i16,
             Some(p) => p as i16,
         };
+        let root_path = PathBuf::from(config.root_path.unwrap());
+        let sql = read_all_migrations(root_path.clone());
         let db_type = DBType::Embedded {
-            root_path: PathBuf::from(config.root_path.unwrap()),
+            root_path,
             port,
             username: config.username.unwrap(),
             password: config.password.unwrap(),
@@ -41,7 +63,12 @@ impl DB {
             host: config.host.unwrap(),
         };
         let connection = db_type.init_conn_string().await.unwrap();
-        Self { connection }
+        // let (connection, db_pool): (DbLock, DbPool) = db_type.create_database_pool().await.unwrap();
+        Self {
+            connection,
+            sql,
+            db_pool: None,
+        }
     }
 
     // pub fn init(config_database: ConfigDatabase) -> Self {}
@@ -54,7 +81,37 @@ impl DB {
     }
 
     pub async fn start(&mut self) -> anyhow::Result<bool> {
-        self.connection.start().await
+        let res = self.connection.start().await;
+        let (_connection, db_pool): (&DbLock, DbPool) = self.create_database_pool().await.unwrap();
+        self.db_pool = Some(db_pool);
+        res
+    }
+
+    pub async fn create_database_pool(&self) -> anyhow::Result<(&DbLock, DbPool)> {
+        info!("Initializing postgresql database connection");
+        let connection = &self.connection;
+
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .connect(connection.as_uri())
+            .await?;
+
+        // let pool: DbPool = Arc::new(pool);
+        // let connection = Arc::new(connection);
+        info!("Successfully initialized the database connection pool");
+        Ok((connection, pool))
+    }
+
+    pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
+        debug!("Creating new database");
+        let conn_url = self.connection.create_new_db(name).await?;
+        debug!("New database created. Now running sql migration");
+        let sql = self.sql.clone();
+
+        let db_pool = &self.db_pool.clone().unwrap();
+        let _res = sqlx::query(&sql).fetch(db_pool);
+        debug!("Migration ran return");
+        Ok(conn_url)
     }
 
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
@@ -96,18 +153,6 @@ impl DBLock {
         self.stop().await
     }
 
-    pub async fn create_db(&self, db_name: String) -> anyhow::Result<bool> {
-        match self {
-            DBLock::External(_) => Ok(false),
-            DBLock::Embedded(pg) => {
-                info!("Shutting down embedded database...");
-                let res = pg.create_database(&db_name).await;
-                println!("create_database got: {:#?}", res);
-                Ok(true)
-            }
-        }
-    }
-
     async fn start(&mut self) -> anyhow::Result<bool> {
         match self {
             DBLock::External(s) => Ok(true),
@@ -121,6 +166,23 @@ impl DBLock {
                         return Err(anyhow::anyhow!(e.to_string()));
                     }
                 }
+            }
+        }
+    }
+
+    async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
+        let name = name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        match self {
+            DBLock::External(s) => {
+                // TODO: Implement, maybe?
+                Err(anyhow::anyhow!(
+                    "Not implemented for external databases, yet"
+                ))
+            }
+            DBLock::Embedded(pg) => {
+                pg.create_database(&name).await;
+                let conn_url = pg.full_db_uri(&name);
+                Ok(conn_url)
             }
         }
     }
