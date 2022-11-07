@@ -45,6 +45,8 @@ impl SystemInner {
         if !self.running {
             self.start().await?;
         }
+        info!("Creating new database");
+        println!("create_new_db asdjfkasjdkfjaskdfajsdf");
         match self.db_lock.lock().unwrap().create_new_db(name).await {
             // match self.db_lock.create_new_db(name).await {
             Err(e) => {
@@ -52,6 +54,7 @@ impl SystemInner {
                 bail!(e.to_string())
             }
             Ok(res) => {
+                println!("create_new_db asdjfkasjdkfjaskdfajsdf: {:#?}", res);
                 info!("Created new database: {:?}", res);
                 Ok(res)
             }

@@ -29,6 +29,7 @@ pub struct DB {
 }
 
 impl DB {
+    #[allow(unused)]
     pub async fn new_external(root_path: String, uri: impl Into<String>) -> Self {
         let db_type = DBType::External(uri.into());
         let connection = db_type.init_conn_string().await.unwrap();
@@ -62,7 +63,13 @@ impl DB {
             timeout: config.timeout.unwrap(),
             host: config.host.unwrap(),
         };
-        let connection = db_type.init_conn_string().await.unwrap();
+        let connection = match db_type.init_conn_string().await {
+            Err(e) => {
+                error!("Error creating connection: {:?}", e.to_string());
+                panic!("ERROR: {:?}", e.to_string())
+            }
+            Ok(r) => r,
+        };
         // let (connection, db_pool): (DbLock, DbPool) = db_type.create_database_pool().await.unwrap();
         Self {
             connection,
@@ -72,11 +79,12 @@ impl DB {
         }
     }
 
-    // pub fn init(config_database: ConfigDatabase) -> Self {}
+    #[allow(unused)]
     pub fn as_uri(&self) -> &str {
         self.connection.as_uri()
     }
 
+    #[allow(unused)]
     pub fn full_db_uri(&self, db_name: &str) -> String {
         self.connection.full_db_uri(db_name)
     }
@@ -105,6 +113,7 @@ impl DB {
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         info!("Creating new database");
+        println!("Calling create_new_db on the connection");
         let (db_name, conn_url) = self.connection.create_new_db(name).await?;
         info!(
             "New database created. Now running sql migration: {:?}",
@@ -118,6 +127,13 @@ impl DB {
 
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         self.connection.stop().await
+    }
+}
+
+impl<'a> Drop for DB {
+    fn drop(&mut self) {
+        info!("Called drop on DB");
+        drop(self.db_pool.as_ref());
     }
 }
 
@@ -187,8 +203,10 @@ impl DBLock {
             DBLock::Embedded(pg) => {
                 info!("Creating new database");
                 let res = pg.create_database(&name).await;
+                println!("Result => {:?}", res);
                 info!("Create database result: {:?}", res);
                 let conn_url = pg.full_db_uri(&name);
+                println!("Name and conn: {:?}", (name.clone(), conn_url.clone()));
                 Ok((name, conn_url))
             }
         }
@@ -229,7 +247,7 @@ impl DBLock {
                 info!("Starting embedded postgresql database");
                 // start postgresql database
                 match pg.stop_db().await {
-                    Ok(e) => Ok(true),
+                    Ok(_e) => Ok(true),
                     Err(e) => {
                         error!("An error occurred starting database: {:?}", e);
                         return Err(anyhow::anyhow!(e.to_string()));
@@ -246,6 +264,12 @@ impl<'a> Drop for DBLock {
         let handle = Handle::current();
         let _ = handle.enter();
         let _ = futures::executor::block_on(self.cleanup());
+        match self {
+            DBLock::External(_s) => {}
+            DBLock::Embedded(pg) => {
+                drop(pg);
+            }
+        }
     }
 }
 
