@@ -39,7 +39,7 @@ pub struct SystemServer {
 impl Finalize for SystemServer {}
 
 impl SystemServer {
-    fn new<'a, C>(cx: &mut C) -> anyhow::Result<Self>
+    fn new<'a, C>(cx: &mut C, root_dir: String) -> anyhow::Result<Self>
     where
         C: Context<'a>,
     {
@@ -49,7 +49,7 @@ impl SystemServer {
         let channel = cx.channel();
 
         let rt = runtime(cx).unwrap(); //.unwrap_or_else(|err| anyhow::anyhow!(err.to_string()));
-        let system = rt.block_on(async move { System::initialize().await.unwrap() });
+        let system = rt.block_on(async move { System::initialize(root_dir).await.unwrap() });
         // We need a channel for communication back to JS
         let mut sys = Arc::new(Mutex::new(system));
 
@@ -97,8 +97,9 @@ impl Drop for SystemServer {
 
 impl SystemServer {
     pub fn js_new(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
+        let root_dir = cx.argument::<JsString>(0)?.value(&mut cx);
         let system_server =
-            SystemServer::new(&mut cx).or_else(|err| cx.throw_error(err.to_string()))?;
+            SystemServer::new(&mut cx, root_dir).or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.boxed(system_server))
     }

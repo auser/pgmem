@@ -3,8 +3,9 @@ const { promisify } = require("util");
 const { init, start, stop, new_db, drop_db } = require("./index.node");
 
 class Database {
-  constructor() {
-    this.db = init();
+  constructor(root_dir) {
+    root_dir = root_dir ?? ".";
+    this.db = init(root_dir);
   }
 
   async start() {

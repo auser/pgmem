@@ -19,6 +19,14 @@ describe('Database', () => {
     await inst.stop();
   })
 
+  it('allows us to set a custom path', async () => {
+    const inst = new Database("./test");
+    const db_uri = await inst.new_db();
+    console.log(db_uri);
+    expect(db_uri.indexOf("postgres://postgres:postgres@localhost:5433/")).toEqual(0);
+    await inst.stop();
+  })
+
   // it('drops a database', async () => {
   //   const inst = new Database();
   //   const db_uri = await inst.new_db();

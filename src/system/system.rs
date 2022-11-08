@@ -11,13 +11,14 @@ pub struct SystemInner {
 }
 
 impl SystemInner {
-    pub async fn new() -> Self {
+    pub async fn new(root_dir: String) -> Self {
         // let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         // Make configurable?
-        let db_lock = Arc::new(Mutex::new(
-            DB::new_embedded(ConfigDatabase::default()).await,
-        ));
+        let mut config = ConfigDatabase::default();
+        config.root_path = Some(root_dir);
+
+        let db_lock = Arc::new(Mutex::new(DB::new_embedded(config).await));
         let running = false;
         Self { db_lock, running }
     }
@@ -105,10 +106,10 @@ pub struct System {
 }
 
 impl System {
-    pub async fn initialize() -> anyhow::Result<System> {
+    pub async fn initialize(root_dir: String) -> anyhow::Result<System> {
         let _logger = logger::init_logging(None);
 
-        let inner = SystemInner::new().await;
+        let inner = SystemInner::new(root_dir).await;
         let inner = Arc::new(Mutex::new(inner));
 
         Ok(Self { inner })
