@@ -5,6 +5,7 @@ use tracing::*;
 
 use super::{config::ConfigDatabase, db::DB, logger};
 
+#[derive(Debug)]
 pub struct SystemInner {
     pub db_lock: Arc<Mutex<DB>>,
     pub running: bool,
@@ -65,7 +66,6 @@ impl SystemInner {
             self.start().await?;
         }
         info!("Dropping database: {}", name);
-        println!("Dropping database: {}", name);
         match self.db_lock.lock().unwrap().drop_database(name).await {
             Err(e) => {
                 error!("Unable to drop database: {:?}", e.to_string());
@@ -86,6 +86,7 @@ impl SystemInner {
                 }
                 Ok(res) => {
                     self.running = false;
+                    info!("DBLock stopped");
                     Ok(res)
                 }
             }
@@ -95,12 +96,7 @@ impl SystemInner {
     }
 }
 
-impl Drop for SystemInner {
-    fn drop(&mut self) {
-        drop(&self.db_lock);
-    }
-}
-
+#[derive(Debug)]
 pub struct System {
     inner: Arc<Mutex<SystemInner>>,
 }

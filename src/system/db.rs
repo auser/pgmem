@@ -104,7 +104,6 @@ impl DB {
 
     pub async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
         info!("Dropping database {}", db_name);
-        println!("Dropping database {}", db_name);
         match self.connection.drop_database(db_name).await {
             Err(e) => {
                 error!("Error dropping database: {:?}", e.to_string());
@@ -154,10 +153,6 @@ impl DBLock {
             DBLock::External(conn_string) => String::from(conn_string),
             DBLock::Embedded(pg) => (&pg).full_db_uri(db_name),
         }
-    }
-
-    pub async fn cleanup(&mut self) -> anyhow::Result<bool> {
-        self.stop().await
     }
 
     async fn start(&mut self) -> anyhow::Result<bool> {
@@ -246,7 +241,7 @@ impl DBLock {
         match self {
             DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
-                info!("Starting embedded postgresql database");
+                info!("Stopping embedded postgresql database");
                 // start postgresql database
                 match pg.stop_db().await {
                     Ok(_e) => Ok(true),
@@ -260,16 +255,20 @@ impl DBLock {
     }
 }
 
-impl<'a> Drop for DBLock {
+impl Drop for DBLock {
     fn drop(&mut self) {
-        info!("Called drop on ConnectionLock");
-        let handle = Handle::current();
-        let _ = handle.enter();
-        let _ = futures::executor::block_on(self.cleanup());
-        let _ = futures::executor::block_on(self.stop());
         match self {
-            DBLock::External(_s) => {}
+            DBLock::External(_) => (),
             DBLock::Embedded(pg) => {
+                println!("Dropping DBLock");
+                info!("Shutting down embedded database...");
+                let handle = Handle::current();
+                let _ = handle.enter();
+                if let Err(e) = futures::executor::block_on(pg.stop_db()) {
+                    error!("error upon shutting down embedded postgres: {:?}", e);
+                } else {
+                    info!("Embedded database is shut down");
+                }
                 drop(pg);
             }
         }

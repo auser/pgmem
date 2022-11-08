@@ -2,19 +2,24 @@
   "name": "@auser/pmem",
   "version": "0.1.0",
   "description": "",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "run-s build:package build:ts",
     "build:package": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
-    "build:ts": "tsbb build --file-names index.ts --emit-types --esm dist/esm --cjs dist",
+    "build:ts": "tsbb build --file-names src/index.ts --esm dist/esm --cjs dist",
     "postbuild:ts": "cp ./index.node dist/index.node && cp ./index.node dist/esm/index.node",
     "build-debug": "npm run build --",
-    "build-release": "npm run build:package -- --release",
+    "build-release": "run-s build-release:*",
+    "build-release:package": "npm run build:package -- --release",
+    "build-release:ts": "npm run build:ts",
     "install": "npm run build-release",
-    "test": "jest --runInBand --forceExit",
+    "test": "jest --runInBand --detectOpenHandles",
     "clean": "neon clean && rm -rf ./node_modules"
   },
+  "files": [
+    "dist/**/*"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {

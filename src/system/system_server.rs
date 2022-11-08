@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use neon::event::Channel;
 use neon::{prelude::*, types::Deferred};
 use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
 use tracing::*;
 
 use super::system::System;
@@ -18,21 +17,20 @@ pub type SystemCallback = Box<dyn FnOnce(&mut Arc<Mutex<System>>, &Channel, Defe
 #[derive()]
 pub enum SystemMessage {
     Callback(Deferred, SystemCallback),
-    Close,
+    Close(Deferred, SystemCallback),
 }
 
 impl Debug for SystemMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SystemMessage::Callback(_, _) => write!(f, "Callback"),
-            SystemMessage::Close => write!(f, "Close"),
+            SystemMessage::Close(_, _) => write!(f, "Close"),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct SystemServer {
-    handle: JoinHandle<()>,
     tx: tokio::sync::mpsc::Sender<SystemMessage>,
 }
 
@@ -53,27 +51,37 @@ impl SystemServer {
         // We need a channel for communication back to JS
         let mut sys = Arc::new(Mutex::new(system));
 
-        // system.run_loop().await;
-
-        let handle = rt.spawn(async move {
+        let _handle = rt.spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     SystemMessage::Callback(deferred, f) => {
                         f(&mut sys, &channel, deferred);
                     }
-                    SystemMessage::Close => break,
+                    SystemMessage::Close(deferred, f) => {
+                        info!("Closing handle here...");
+                        f(&mut sys, &channel, deferred);
+                        break;
+                    }
                 }
             }
         });
 
-        Ok(Self { tx, handle })
+        Ok(Self { tx })
     }
 
     // Idiomatic rust would take an owned `self` to prevent use after close
     // However, it's not possible to prevent JavaScript from continuing to hold a closed database
     #[allow(unused)]
-    fn close(&self) -> Result<(), tokio::sync::mpsc::error::SendError<SystemMessage>> {
-        block_on(self.tx.send(SystemMessage::Close))
+    fn close(
+        &self,
+        deferred: Deferred,
+        callback: impl FnOnce(&mut Arc<Mutex<System>>, &Channel, Deferred) + Send + 'static,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<SystemMessage>> {
+        println!("CALLED CLOSE on SystemServer");
+        block_on(
+            self.tx
+                .send(SystemMessage::Close(deferred, Box::new(callback))),
+        )
     }
 
     fn send(
@@ -88,18 +96,12 @@ impl SystemServer {
     }
 }
 
-impl Drop for SystemServer {
-    fn drop(&mut self) {
-        let _ = self.close();
-        self.handle.abort();
-    }
-}
-
 impl SystemServer {
     pub fn js_new(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
         let root_dir = cx.argument::<JsString>(0)?.value(&mut cx);
         let system_server =
             SystemServer::new(&mut cx, root_dir).or_else(|err| cx.throw_error(err.to_string()))?;
+        debug!("Got a system server handle");
 
         Ok(cx.boxed(system_server))
     }
@@ -140,15 +142,16 @@ impl SystemServer {
 
         system_server
             .send(deferred, move |sys, channel, deferred| {
-                // Local this
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.stop());
 
-                info!("In start: {:?}", res);
-                deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
-                    Ok(cx.boolean(true))
+                deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
+                    match res {
+                        Err(e) => Ok(cx.string(e.to_string())),
+                        Ok(_) => Ok(cx.string("Closed")),
+                    }
                 });
             })
             .into_rejection(&mut cx)?;
@@ -194,9 +197,7 @@ impl SystemServer {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
-                println!("Dropping database");
                 let res = futures::executor::block_on(sys.drop_database(db_name));
-                println!("Dropped database");
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {
@@ -228,7 +229,11 @@ impl SendResultExt for Result<(), tokio::sync::mpsc::error::SendError<SystemMess
                     deferred.reject(cx, err);
                     Ok(())
                 }
-                SystemMessage::Close => cx.throw_error("Expected SystemMessage::Callback"),
+                SystemMessage::Close(deferred, _) => {
+                    let err = cx.error(msg)?;
+                    deferred.reject(cx, err);
+                    Ok(())
+                }
             }
         })
     }
