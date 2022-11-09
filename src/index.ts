@@ -21,8 +21,9 @@ export class Database {
 
   async stop() {
     if (this.db) {
-      let db = await this.get_db();
-      return stop_db.call(db);
+      const res = await stop_db.call(this.db);
+      console.log("stopped =>", res);
+      delete this.db;
     }
   }
 
@@ -31,9 +32,11 @@ export class Database {
     return new_db.call(db, name);
   }
 
-  async drop_db(name: string) {
+  async drop_db(uri: string) {
+    const parts = uri.split("/") ?? [];
+    let db_name = parts[parts.length - 1];
     let db = await this.get_db();
-    return drop_db.call(db, name);
+    return drop_db.call(db, uri, db_name);
   }
 
   async get_db() {

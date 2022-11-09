@@ -75,7 +75,6 @@ impl SystemServer {
         deferred: Deferred,
         callback: impl FnOnce(&mut Arc<Mutex<System>>, &Channel, Deferred) + Send + 'static,
     ) -> Result<(), tokio::sync::mpsc::error::SendError<SystemMessage>> {
-        println!("CALLED CLOSE on SystemServer");
         block_on(
             self.tx
                 .send(SystemMessage::Close(deferred, Box::new(callback))),
@@ -185,14 +184,15 @@ impl SystemServer {
             .this()
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
 
-        let db_name = cx.argument::<JsString>(0)?.value(&mut cx);
+        let uri = cx.argument::<JsString>(0)?.value(&mut cx);
+        let db_name = cx.argument::<JsString>(1)?.value(&mut cx);
 
         system_server
             .send(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
-                let res = futures::executor::block_on(sys.drop_database(db_name));
+                let res = futures::executor::block_on(sys.drop_database(uri, db_name));
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {

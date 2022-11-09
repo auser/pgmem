@@ -1,6 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::bail;
+use tempdir::TempDir;
 use tracing::*;
 
 use super::{config::ConfigDatabase, db::DB, logger};
@@ -9,17 +13,27 @@ use super::{config::ConfigDatabase, db::DB, logger};
 pub struct SystemInner {
     pub db_lock: Arc<Mutex<DB>>,
     pub running: bool,
+    pub root_path: String,
 }
 
 impl SystemInner {
     pub async fn new(root_dir: String) -> Self {
         // Make configurable?
         let mut config = ConfigDatabase::default();
-        config.root_path = Some(root_dir);
+        let database_dir = match TempDir::new("db") {
+            Ok(v) => String::from(v.path().to_str().unwrap()),
+            Err(_) => root_dir,
+        };
+        let root_path = Some(database_dir.clone());
+        config.root_path = root_path;
 
         let db_lock = Arc::new(Mutex::new(DB::new_embedded(config).await));
         let running = false;
-        Self { db_lock, running }
+        Self {
+            db_lock,
+            running,
+            root_path: database_dir.clone(),
+        }
     }
 
     pub async fn start(&mut self) -> anyhow::Result<bool> {
@@ -59,17 +73,19 @@ impl SystemInner {
         }
     }
 
-    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
-        if !self.running {
-            self.start().await?;
-        }
-        info!("Dropping database: {}", name);
-        match self.db_lock.lock().unwrap().drop_database(name).await {
-            Err(e) => {
-                error!("Unable to drop database: {:?}", e.to_string());
-                bail!(e.to_string())
+    pub async fn drop_database(&mut self, uri: String, name: String) -> anyhow::Result<()> {
+        if self.running {
+            info!("Dropping database: {}", name);
+            let mut lock = self.db_lock.lock().unwrap();
+            match lock.drop_database(uri, name).await {
+                Err(e) => {
+                    error!("Unable to drop database: {:?}", e.to_string());
+                    bail!(e.to_string())
+                }
+                Ok(_) => Ok(()),
             }
-            Ok(_) => Ok(()),
+        } else {
+            Ok(())
         }
     }
 
@@ -124,9 +140,9 @@ impl System {
         Ok(inner.create_new_db(name).await?)
     }
 
-    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
+    pub async fn drop_database(&mut self, uri: String, name: String) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        Ok(inner.drop_database(name).await?)
+        Ok(inner.drop_database(uri, name).await?)
     }
 }
 

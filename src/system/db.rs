@@ -7,7 +7,6 @@ use pg_embed::{
 };
 use portpicker::pick_unused_port;
 use sqlx::{postgres::PgPoolOptions, Executor};
-use tempdir::TempDir;
 
 use std::{
     fmt::Debug,
@@ -104,9 +103,9 @@ impl DB {
         Ok(conn_url)
     }
 
-    pub async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
+    pub async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
         info!("Dropping database {}", db_name);
-        match self.connection.drop_database(db_name).await {
+        match self.connection.drop_database(uri, db_name).await {
             Err(e) => {
                 error!("Error dropping database: {:?}", e.to_string());
                 Err(anyhow::anyhow!(e.to_string()))
@@ -117,13 +116,6 @@ impl DB {
 
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         self.connection.stop().await
-    }
-}
-
-impl<'a> Drop for DB {
-    fn drop(&mut self) {
-        info!("Called drop on DB");
-        // drop(self.db_pool.as_ref());
     }
 }
 
@@ -197,13 +189,14 @@ impl DBLock {
 
     async fn sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
         let pool = PgPoolOptions::new()
-            .max_connections(32)
+            .max_connections(1)
             .connect(&uri)
             .await?;
 
         match self {
             DBLock::External(_s) => {
                 // TODO: implement, maybe?
+                pool.close().await;
                 drop(pool);
                 Err(anyhow::anyhow!(
                     "Not implemented for external databases yet"
@@ -211,11 +204,13 @@ impl DBLock {
             }
             DBLock::Embedded(_pg) => match pool.execute(sql.as_str()).await {
                 Ok(_r) => {
+                    pool.close().await;
                     drop(pool);
                     Ok(())
                 }
                 Err(e) => {
                     error!("Error occurrend when migrating: {:?}", e.to_string());
+                    pool.close().await;
                     drop(pool);
                     Err(anyhow::anyhow!(e.to_string()))
                 }
@@ -223,7 +218,19 @@ impl DBLock {
         }
     }
 
-    async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
+    async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
+        // let _res = self
+        //     .sql(
+        //         uri,
+        //         String::from(format!(
+        //             r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
+        // FROM pg_stat_activity
+        // WHERE pg_stat_activity.datname = '{}';
+        // "#,
+        //             db_name
+        //         )),
+        //     )
+        //     .await?;
         match self {
             DBLock::External(_s) => Ok(()),
             DBLock::Embedded(pg) => match pg.drop_database(db_name.as_str()).await {
@@ -252,26 +259,6 @@ impl DBLock {
                         return Err(anyhow::anyhow!(e.to_string()));
                     }
                 }
-            }
-        }
-    }
-}
-
-impl Drop for DBLock {
-    fn drop(&mut self) {
-        match self {
-            DBLock::External(_) => (),
-            DBLock::Embedded(pg) => {
-                println!("Dropping DBLock");
-                info!("Shutting down embedded database...");
-                let handle = Handle::current();
-                let _ = handle.enter();
-                if let Err(e) = futures::executor::block_on(pg.stop_db()) {
-                    error!("error upon shutting down embedded postgres: {:?}", e);
-                } else {
-                    info!("Embedded database is shut down");
-                }
-                drop(pg);
             }
         }
     }
@@ -320,13 +307,10 @@ impl DBType {
                 host,
             } => {
                 info!("initializing an embedded postgresql database");
-                // let database_dir = root_path.join("db").to_owned();
-                let database_dir = TempDir::new("db")?;
-                let database_dir = PathBuf::from(database_dir.path());
+                let database_dir = root_path.join("db").to_owned();
 
                 self.clear_out_db_path(database_dir.clone())?;
-                self.kill_any_existing_postgres_process()?;
-                fs::create_dir_all(database_dir.clone())?;
+                // self.kill_any_existing_postgres_process()?;
 
                 let pg_settings = PgSettings {
                     database_dir: database_dir.canonicalize().unwrap().clone(),
@@ -339,7 +323,6 @@ impl DBType {
                     migration_dir: Some(root_path.into()),
                     auth_method: PgAuthMethod::Plain,
                 };
-                println!("HERE");
 
                 info!("Initializing embedded postgresql database");
                 let mut pg = match PgEmbed::new(

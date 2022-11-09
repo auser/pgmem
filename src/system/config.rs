@@ -42,7 +42,7 @@ impl Default for ConfigDatabase {
             username: Some("postgres".to_string()),
             password: Some("postgres".to_string()),
             persistent: Some(false),
-            port: Some(5433),
+            port: None, //Some(5433),
             // max_connections: 5,
             host: Some("https://repo1.maven.org".to_string()),
         }
