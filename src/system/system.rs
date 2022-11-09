@@ -56,20 +56,23 @@ impl SystemInner {
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
-        if !self.running {
-            self.start().await?;
-        }
-        info!("Creating new database");
-        match self.db_lock.lock().unwrap().create_new_db(name).await {
-            // match self.db_lock.create_new_db(name).await {
-            Err(e) => {
-                error!("Unable to create a new database: {:?}", e.to_string());
-                bail!(e.to_string())
+        println!("create_new_db called in system");
+        if self.running {
+            info!("Creating new database");
+            match self.db_lock.lock().unwrap().create_new_db(name).await {
+                // match self.db_lock.create_new_db(name).await {
+                Err(e) => {
+                    error!("Unable to create a new database: {:?}", e.to_string());
+                    bail!(e.to_string())
+                }
+                Ok(res) => {
+                    info!("Created new database: {:?}", res);
+                    Ok(res)
+                }
             }
-            Ok(res) => {
-                info!("Created new database: {:?}", res);
-                Ok(res)
-            }
+        } else {
+            error!("Not running. Call start first");
+            Ok("error".to_string())
         }
     }
 

@@ -33,10 +33,11 @@ export class Database {
   }
 
   async drop_db(uri: string) {
-    const parts = uri.split("/") ?? [];
-    let db_name = parts[parts.length - 1];
-    let db = await this.get_db();
-    return drop_db.call(db, uri, db_name);
+    if (this.db) {
+      const parts = uri.split("/") ?? [];
+      let db_name = parts[parts.length - 1];
+      return drop_db.call(this.db, uri, db_name);
+    }
   }
 
   async get_db() {

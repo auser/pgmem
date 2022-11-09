@@ -17,7 +17,8 @@ tokio = { version = "1.21.2", features = [
   "rt-multi-thread",
 ] }
 anyhow = "1.0.66"
-pg-embed = { version = "0.6.5", features = ["tokio"] }
+pg-embed = { version = "0.6", features = ["rt_tokio"] }
+
 thiserror = "1.0.37"
 portpicker = "0.1.1"
 serde = { version = "1.0.147", features = ["derive"] }
@@ -32,7 +33,6 @@ flexi_logger = { version = "0.24", features = [
   "tracing-subscriber",
   "tracing",
 ] }
-uuid = { version = "1.2.1", features = ["serde", "v4"] }
 glob = "0.3.0"
 sqlx = { version = "0.6", features = [
   "runtime-tokio-rustls",
@@ -44,6 +44,8 @@ sqlx = { version = "0.6", features = [
   "time",
 ] }
 tempdir = "0.3.7"
+cuid = "1.2.0"
+url = "2.3.1"
 
 [dependencies.neon]
 version = "0.10"
