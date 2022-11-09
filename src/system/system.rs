@@ -13,8 +13,6 @@ pub struct SystemInner {
 
 impl SystemInner {
     pub async fn new(root_dir: String) -> Self {
-        // let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
         // Make configurable?
         let mut config = ConfigDatabase::default();
         config.root_path = Some(root_dir);

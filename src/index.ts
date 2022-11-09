@@ -21,7 +21,8 @@ export class Database {
 
   async stop() {
     if (this.db) {
-      return stop_db.call(this.db);
+      let db = await this.get_db();
+      return stop_db.call(db);
     }
   }
 

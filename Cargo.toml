@@ -43,6 +43,7 @@ sqlx = { version = "0.6", features = [
   "tls",
   "time",
 ] }
+tempdir = "0.3.7"
 
 [dependencies.neon]
 version = "0.10"

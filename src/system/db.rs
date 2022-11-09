@@ -1,4 +1,5 @@
 use anyhow::bail;
+
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
     pg_fetch::{PgFetchSettings, PostgresVersion},
@@ -6,6 +7,8 @@ use pg_embed::{
 };
 use portpicker::pick_unused_port;
 use sqlx::{postgres::PgPoolOptions, Executor};
+use tempdir::TempDir;
+
 use std::{
     fmt::Debug,
     fs::{self},
@@ -46,7 +49,8 @@ impl DB {
         };
         let cfg_root_path = config.root_path.unwrap();
         let root_path = PathBuf::from(&cfg_root_path);
-        let migration_sql = read_all_migrations(root_path.clone());
+        // TODO: decide to put this back or not?
+        let migration_sql = String::from(""); //read_all_migrations(root_path.clone());
         let db_type = DBType::Embedded {
             root_path,
             port,
@@ -65,8 +69,6 @@ impl DB {
         };
         Self {
             connection,
-            // root_path: PathBuf::from(cfg_root_path),
-            // db_pool: None,
             migration_sql,
         }
     }
@@ -318,10 +320,13 @@ impl DBType {
                 host,
             } => {
                 info!("initializing an embedded postgresql database");
-                let database_dir = root_path.join("db").to_owned();
+                // let database_dir = root_path.join("db").to_owned();
+                let database_dir = TempDir::new("db")?;
+                let database_dir = PathBuf::from(database_dir.path());
 
                 self.clear_out_db_path(database_dir.clone())?;
                 self.kill_any_existing_postgres_process()?;
+                fs::create_dir_all(database_dir.clone())?;
 
                 let pg_settings = PgSettings {
                     database_dir: database_dir.canonicalize().unwrap().clone(),
@@ -334,6 +339,7 @@ impl DBType {
                     migration_dir: Some(root_path.into()),
                     auth_method: PgAuthMethod::Plain,
                 };
+                println!("HERE");
 
                 info!("Initializing embedded postgresql database");
                 let mut pg = match PgEmbed::new(

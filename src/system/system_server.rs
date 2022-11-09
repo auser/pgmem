@@ -9,8 +9,6 @@ use tracing::*;
 use super::system::System;
 use super::utils::{block_on, runtime};
 
-// pub type SystemCallback =
-//     Box<dyn FnOnce(&mut broadcast::Sender<String>, &Channel, Deferred) + Send>;
 pub type SystemCallback = Box<dyn FnOnce(&mut Arc<Mutex<System>>, &Channel, Deferred) + Send>;
 
 #[allow(unused)]
@@ -107,11 +105,7 @@ impl SystemServer {
     }
 
     pub fn js_start(mut cx: FunctionContext) -> JsResult<JsPromise> {
-        // let callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
-
         let (deferred, promise) = cx.promise();
-        // let system_server = cx.argument::<JsBox<SystemServer>>(0)?;
-        // Get the `this` value as a `JsBox<Database>`
         let system_server = cx
             .this()
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
@@ -125,6 +119,7 @@ impl SystemServer {
                 let res = futures::executor::block_on(sys.start());
 
                 info!("In start: {:?}", res);
+                // new Promise((resolve) => resolve())
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     Ok(cx.boolean(true))
                 });

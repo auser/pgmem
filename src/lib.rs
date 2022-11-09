@@ -1,3 +1,4 @@
+extern crate tempdir;
 use neon::prelude::*;
 
 use crate::system::neon_main;
