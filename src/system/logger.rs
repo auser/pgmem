@@ -6,7 +6,7 @@ use flexi_logger::{
 };
 
 pub fn init_logging(_config_dir: Option<&Path>) -> anyhow::Result<LoggerHandle> {
-    let logger = Logger::try_with_env_or_str("error")?
+    let logger = Logger::try_with_env()?
         .log_to_file(FileSpec::default().directory("logs").basename("pqlmem"))
         .rotate(
             Criterion::Age(Age::Hour),
