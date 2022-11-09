@@ -22,6 +22,7 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
     rt.block_on(future)
 }
 
+#[allow(unused)]
 pub fn read_all_migrations(root_path: PathBuf) -> String {
     debug!("read_all_migrations in : {:?}", root_path);
     let mut sql = String::new();

@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use anyhow::bail;
 use tempdir::TempDir;
@@ -56,7 +53,6 @@ impl SystemInner {
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
-        println!("create_new_db called in system");
         if self.running {
             info!("Creating new database");
             match self.db_lock.lock().unwrap().create_new_db(name).await {

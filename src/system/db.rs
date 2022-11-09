@@ -79,7 +79,6 @@ impl DB {
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
-        println!("called create_new_db in db");
         info!("Creating new database");
         let (db_name, conn_url) = self.connection.create_new_db(name).await?;
         info!(
@@ -174,14 +173,12 @@ impl DBLock {
                 let res = pg.create_database(&name).await;
                 info!("Create database result: {:?}", res);
                 let conn_url = pg.full_db_uri(&name);
-                println!("New connection uri: {:?}", conn_url);
                 Ok((name, conn_url))
             }
         }
     }
 
     async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
-        println!("drop_database called {} {}", uri, db_name);
         let uri2 = uri.clone();
         let parsed = Url::parse(uri2.as_str()).unwrap();
         let cleaned: &str = &parsed[..Position::AfterPort];
@@ -198,7 +195,6 @@ impl DBLock {
             )
             .await;
 
-        println!("Using pg_embed to drop the database now: {}", cleaned);
         match self {
             DBLock::External(_s) => Ok(()),
             DBLock::Embedded(pg) => match pg.drop_database(db_name.as_str()).await {
@@ -215,7 +211,6 @@ impl DBLock {
     }
 
     async fn stop(&mut self) -> anyhow::Result<bool> {
-        println!("STOP STOP STOP STOP STOP in db called");
         match self {
             DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
@@ -363,6 +358,7 @@ impl DBType {
         Ok(())
     }
 
+    #[allow(unused)]
     fn kill_any_existing_postgres_process(&self) -> anyhow::Result<()> {
         debug!("Checking if postgres is already running");
         let s = SysInfoSystem::new_with_specifics(
