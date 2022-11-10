@@ -45,6 +45,7 @@ impl SystemServer {
         // First get the database -- make this configurable, maybe?
         // let db = DBType::default();
         let (tx, mut rx) = tokio::sync::mpsc::channel::<SystemMessage>(32);
+        let signal_tx = tx.clone();
         let channel = cx.channel();
 
         let rt = runtime(cx).unwrap(); //.unwrap_or_else(|err| anyhow::anyhow!(err.to_string()));
@@ -53,41 +54,54 @@ impl SystemServer {
         let mut sys = Arc::new(Mutex::new(system));
 
         let _handle = rt.spawn(async move {
-            while let Some(msg) = rx.recv().await {
-                match msg {
-                    SystemMessage::Callback(deferred, f) => {
-                        f(&mut sys, &channel, deferred);
-                    }
-                    SystemMessage::Close(deferred, f) => {
-                        log::trace!("Closing handle here...");
-                        let handle = Handle::current();
-                        let _ = handle.enter();
-                        let res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
-                        log::trace!("Result from stop: {:?}", res);
-                        f(&mut sys, &channel, deferred);
-                        break;
-                    }
-                    SystemMessage::Terminate => {
-                        println!("Breaking from Terminate");
-                        log::trace!("Terminate called");
-                        // let handle = Handle::current();
-                        // let _ = handle.enter();
-                        // let _res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
-                        println!("Breaking from Terminate");
-                        break;
+            loop {
+            tokio::select! {
+                Some(msg) = rx.recv() => {
+                    match msg {
+                        SystemMessage::Callback(deferred, f) => {
+                            f(&mut sys, &channel, deferred);
+                        }
+                        SystemMessage::Close(deferred, f) => {
+                            log::debug!(target: "pmem:system_server", "Closing handle here");
+                            let handle = Handle::current();
+                            let _ = handle.enter();
+                            let res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
+                            log::debug!(target: "pmem:system_server", "Result from stop: {:?}", res);
+                            f(&mut sys, &channel, deferred);
+                            return;
+                        }
+                        SystemMessage::Terminate => {
+                            println!("Breaking from Terminate");
+                            log::trace!(target: "pmem:system_server", "Terminate called");
+                            let handle = Handle::current();
+                            let _ = handle.enter();
+                            println!("Breaking from Terminate in handler");
+                            let _res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
+                            log::debug!(target: "pmem:system_server", "Breaking from Terminate");
+                            return;
+                        }
                     }
                 }
+                // TODO: handle signals
+                // _res = tokio::signal::ctrl_c() => {
+                //     println!("Breaking from Terminate");
+                //     let handle = Handle::current();
+                //     let _ = handle.enter();
+                //     println!("Breaking from Terminate");
+                //     let _res = futures::executor::block_on(signal_tx.send(SystemMessage::Terminate));
+                //     println!("Breaking from Terminate");
+                //     // drop(sys);
+                //     // let _ = signal_tx.send(SystemMessage::Terminate);
+                //     log::debug!(target: "pmem:system_server", "Received a control+c");
+                //     break;
+                // }
+                // else => {
+                //     log::debug!("Else?");
+                // }
             }
-        });
-
-        let signal_tx = tx.clone();
-        let _signal_handle = rt.spawn(async move {
-            tokio::signal::ctrl_c().await.unwrap();
-            log::debug!("Received a control+c");
-            let handle = Handle::current();
-            let _ = handle.enter();
-            let _ = signal_tx.clone().send(SystemMessage::Terminate).await;
-            log::debug!("Terminate sent");
+        }
+            // while let Some(msg) = rx.recv().await {
+            // }
         });
 
         Ok(Self { tx })
@@ -163,11 +177,11 @@ impl SystemServer {
         system_server
             .close(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
+                log::info!("Close called");
                 let handle = Handle::current();
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.stop());
 
-                log::info!("Close called");
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
                     match res {
                         Err(e) => Ok(cx.string(e.to_string())),

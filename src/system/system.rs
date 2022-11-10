@@ -96,7 +96,8 @@ impl SystemInner {
             match db_lock.stop().await {
                 Err(e) => {
                     log::error!("Unable to stop database: {:?}", e.to_string());
-                    bail!(e.to_string())
+                    Ok(false)
+                    // bail!(e.to_string())
                 }
                 Ok(res) => {
                     self.running = false;
