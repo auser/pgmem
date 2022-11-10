@@ -45,7 +45,7 @@ impl SystemServer {
         // First get the database -- make this configurable, maybe?
         // let db = DBType::default();
         let (tx, mut rx) = tokio::sync::mpsc::channel::<SystemMessage>(32);
-        let signal_tx = tx.clone();
+        // let signal_tx = tx.clone();
         let channel = cx.channel();
 
         let rt = runtime(cx).unwrap(); //.unwrap_or_else(|err| anyhow::anyhow!(err.to_string()));
@@ -95,9 +95,9 @@ impl SystemServer {
                 //     log::debug!(target: "pmem:system_server", "Received a control+c");
                 //     break;
                 // }
-                // else => {
-                //     log::debug!("Else?");
-                // }
+                else => {
+                    log::debug!("Else?");
+                }
             }
         }
             // while let Some(msg) = rx.recv().await {

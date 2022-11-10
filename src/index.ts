@@ -1,4 +1,5 @@
 const { promisify } = require("util");
+import * as url from "node:url";
 
 const { init_db, start_db, stop_db, new_db, drop_db } = require("./index.node");
 
@@ -32,9 +33,10 @@ export class Database {
 
   async drop_db(uri: string) {
     if (this.db) {
-      const parts = uri.split("/") ?? [];
-      let db_name = parts[parts.length - 1];
-      await drop_db.call(this.db, uri, db_name);
+      const url_obj = new URL(uri);
+      const db_name = url_obj.pathname.split("/")[1];
+      const parsed_uri = url.format(url_obj, { search: false });
+      await drop_db.call(this.db, parsed_uri, db_name);
     }
   }
 

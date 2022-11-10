@@ -11,7 +11,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
     "outDir": "dist",
     "baseUrl": "."
