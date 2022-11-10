@@ -17,6 +17,7 @@ pub type SystemCallback = Box<dyn FnOnce(&mut Arc<Mutex<System>>, &Channel, Defe
 pub enum SystemMessage {
     Callback(Deferred, SystemCallback),
     Close(Deferred, SystemCallback),
+    Terminate,
 }
 
 impl Debug for SystemMessage {
@@ -24,6 +25,7 @@ impl Debug for SystemMessage {
         match self {
             SystemMessage::Callback(_, _) => write!(f, "Callback"),
             SystemMessage::Close(_, _) => write!(f, "Close"),
+            SystemMessage::Terminate => write!(f, "Terminate"),
         }
     }
 }
@@ -65,8 +67,27 @@ impl SystemServer {
                         f(&mut sys, &channel, deferred);
                         break;
                     }
+                    SystemMessage::Terminate => {
+                        println!("Breaking from Terminate");
+                        log::trace!("Terminate called");
+                        // let handle = Handle::current();
+                        // let _ = handle.enter();
+                        // let _res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
+                        println!("Breaking from Terminate");
+                        break;
+                    }
                 }
             }
+        });
+
+        let signal_tx = tx.clone();
+        let _signal_handle = rt.spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            log::debug!("Received a control+c");
+            let handle = Handle::current();
+            let _ = handle.enter();
+            let _ = signal_tx.clone().send(SystemMessage::Terminate).await;
+            log::debug!("Terminate sent");
         });
 
         Ok(Self { tx })
@@ -235,6 +256,7 @@ impl SendResultExt for Result<(), tokio::sync::mpsc::error::SendError<SystemMess
                     deferred.reject(cx, err);
                     Ok(())
                 }
+                _ => Ok(()),
             }
         })
     }

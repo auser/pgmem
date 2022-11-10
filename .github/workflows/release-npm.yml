@@ -21,15 +21,15 @@ jobs:
           node-version: '14'
 
       # Install dependencies (required by Run tests step)
-      - name: Install dependencies
-        run: npm install
+      # - name: Install dependencies
+      #   run: npm install
         
-      - name: Build package
-        run: npm run build
+      # - name: Build package
+      #   run: npm run build
 
-      # Tests
-      - name: Run tests
-        run: npm run test
+      # # Tests
+      # - name: Run tests
+      #   run: npm run test
 
       # Configure Git
       - name: Git configuration
