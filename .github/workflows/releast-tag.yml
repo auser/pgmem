@@ -21,9 +21,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
-          DEPLOY_DIR: dist
-          SRC_PACKAGE_DIR: src
-
 
       - name: Create Release for Tag
         id: release_tag
