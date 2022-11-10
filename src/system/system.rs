@@ -88,6 +88,16 @@ impl SystemInner {
         }
     }
 
+    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
+        if self.running {
+            let mut db_lock = self.db_lock.lock().unwrap();
+            log::debug!("System called stop on the db_lock");
+            db_lock.execute_sql(uri, sql).await
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         // Incase we're not running, don't stop
         if self.running {
@@ -134,6 +144,11 @@ impl System {
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         let mut inner = self.inner.lock().unwrap();
         Ok(inner.stop().await?)
+    }
+
+    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        Ok(inner.execute_sql(uri, sql).await?)
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {

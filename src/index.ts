@@ -1,7 +1,14 @@
 const { promisify } = require("util");
 import * as url from "node:url";
 
-const { init_db, start_db, stop_db, new_db, drop_db } = require("./index.node");
+const {
+  init_db,
+  start_db,
+  stop_db,
+  new_db,
+  drop_db,
+  execute_sql,
+} = require("./index.node");
 
 export class Database {
   db: any;
@@ -29,6 +36,11 @@ export class Database {
   async new_db(name: string) {
     let db = await this._get_db();
     return db && new_db.call(db, name);
+  }
+
+  async execute_sql(uri: String, sql: String) {
+    let db = await this._get_db();
+    return db && execute_sql.call(db, uri, sql);
   }
 
   async drop_db(uri: string) {

@@ -219,6 +219,34 @@ impl SystemServer {
         Ok(promise)
     }
 
+    pub fn js_execute_sql(mut cx: FunctionContext) -> JsResult<JsPromise> {
+        let (deferred, promise) = cx.promise();
+        let system_server = cx
+            .this()
+            .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
+
+        let uri = cx.argument::<JsString>(0)?.value(&mut cx);
+        let sql = cx.argument::<JsString>(1)?.value(&mut cx);
+
+        system_server
+            .send(deferred, move |sys, channel, deferred| {
+                let mut sys = sys.lock().unwrap();
+                let handle = Handle::current();
+                let _ = handle.enter();
+                let res = futures::executor::block_on(sys.execute_sql(uri, sql));
+
+                deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
+                    match res {
+                        Err(_e) => Ok(cx.boolean(false)),
+                        Ok(_) => Ok(cx.boolean(true)),
+                    }
+                });
+            })
+            .into_rejection(&mut cx)?;
+
+        Ok(promise)
+    }
+
     pub fn js_drop_database(mut cx: FunctionContext) -> JsResult<JsPromise> {
         let (deferred, promise) = cx.promise();
         let system_server = cx

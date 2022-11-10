@@ -81,10 +81,10 @@ impl DB {
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         log::info!("Creating new database");
         let (db_name, conn_url) = self.connection.create_new_db(name).await?;
-        log::info!(
-            "New database created. Now running sql migration: {:?}",
-            db_name
-        );
+        // log::info!(
+        //     "New database created. Now running sql migration: {:?}",
+        //     db_name
+        // );
         // let full_uri = self.connection.full_db_uri(&db_name);
         // let _ = self
         //     .connection
@@ -108,6 +108,12 @@ impl DB {
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
         let res = self.connection.stop().await?;
         log::debug!("Stopped connection");
+        Ok(res)
+    }
+
+    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
+        let res = self.connection.sql(uri, sql).await?;
+        log::debug!("Executed sql");
         Ok(res)
     }
 }
