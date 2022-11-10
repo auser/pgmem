@@ -1,6 +1,6 @@
 {
   "name": "@auser/pmem",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,8 +17,9 @@
     "install": "npm run build-release",
     "test": "mocha",
     "clean": "neon clean && rm -rf ./node_modules",
-    "postpublish": "git push && git push --tags",
-    "prepublishOnly": "npm test"
+    "pub": "npm version patch --force && npm publish",
+    "postpub": "git push && git push --tags",
+    "prepubOnly": "npm test"
   },
   "files": [
     "/dist"
