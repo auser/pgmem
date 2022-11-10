@@ -14,7 +14,6 @@
     "build-release": "run-s build-release:*",
     "build-release:package": "npm run build:package -- --release",
     "build-release:ts": "npm run build:ts",
-    "install": "npm run build-release",
     "test": "mocha",
     "clean": "neon clean && rm -rf ./node_modules",
     "release": "run-s test release:version release:tags",
