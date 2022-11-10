@@ -29,8 +29,7 @@ describe('Database', () => {
     const inst = await start_new_db();;
     const db_uri = await inst.new_db();
     expect(db_uri.indexOf("postgres://postgres:postgres@localhost")).equal(0);
-    const d = await inst.drop_db(db_uri);
-    console.log(`d =>`, d);
+    await inst.drop_db(db_uri);
     await inst.stop();
   })
 
