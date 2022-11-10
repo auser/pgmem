@@ -1,6 +1,6 @@
 {
   "name": "@auser/pmem",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,21 +17,35 @@
     "install": "npm run build-release",
     "test": "mocha",
     "clean": "neon clean && rm -rf ./node_modules",
-    "pub": "npm version patch --force && npm publish",
-    "postpub": "git push && git push --tags",
-    "prepubOnly": "npm test"
+    "release": "run-s test release:version release:tags",
+    "release:version": "standard-version",
+    "release:tags": "git push && git push --tags"
   },
   "files": [
     "/dist"
   ],
-  "author": "",
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
+    }
+  },
+  "author": "Ari Lerner",
   "license": "ISC",
   "devDependencies": {
+    "@commitlint/cli": "^17.2.0",
+    "@commitlint/config-conventional": "^17.2.0",
     "@types/jest": "^29.2.2",
     "cargo-cp-artifact": "^0.1.6",
     "chai": "^4.3.7",
+    "husky": "^8.0.2",
     "mocha": "^10.1.0",
     "npm-run-all": "^4.1.5",
+    "standard-version": "^9.5.0",
     "tsbb": "^3.7.8"
   }
 }
