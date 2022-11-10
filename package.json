@@ -4,6 +4,7 @@
   "description": "",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typings": "./dist/index.d.ts",
   "scripts": {
     "build": "run-s build:package build:ts",
     "build:package": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
@@ -15,10 +16,12 @@
     "build-release:ts": "npm run build:ts",
     "install": "npm run build-release",
     "test": "mocha",
-    "clean": "neon clean && rm -rf ./node_modules"
+    "clean": "neon clean && rm -rf ./node_modules",
+    "postpublish": "git push && git push --tags",
+    "prepublishOnly": "npm test"
   },
   "files": [
-    "dist/**/*"
+    "/dist"
   ],
   "author": "",
   "license": "ISC",
