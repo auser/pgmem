@@ -11,14 +11,8 @@ export class Database {
     this.root_dir = root_dir ?? ".";
   }
 
-  async init() {
-    if (!this.used) {
-      this.db = await init_db(this.root_dir);
-    }
-  }
-
   async start() {
-    let db = await this.get_db();
+    let db = await this._get_db();
     return db && start_db.call(db);
   }
 
@@ -26,12 +20,13 @@ export class Database {
     if (this.db) {
       const res = await stop_db.call(this.db);
       this.used = true;
-      this.db = null;
+      this.db = undefined;
     }
+    return this;
   }
 
   async new_db(name: string) {
-    let db = await this.get_db();
+    let db = await this._get_db();
     return db && new_db.call(db, name);
   }
 
@@ -39,13 +34,13 @@ export class Database {
     if (this.db) {
       const parts = uri.split("/") ?? [];
       let db_name = parts[parts.length - 1];
-      return drop_db.call(this.db, uri, db_name);
+      await drop_db.call(this.db, uri, db_name);
     }
   }
 
-  async get_db() {
+  async _get_db() {
     if (!this.db) {
-      await this.init();
+      this.db = init_db(this.root_dir);
     }
     return this.db;
   }

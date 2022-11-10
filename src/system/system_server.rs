@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
+use log;
 use neon::event::Channel;
 use neon::{prelude::*, types::Deferred};
 use tokio::runtime::Handle;
@@ -56,7 +57,11 @@ impl SystemServer {
                         f(&mut sys, &channel, deferred);
                     }
                     SystemMessage::Close(deferred, f) => {
-                        info!("Closing handle here...");
+                        log::trace!("Closing handle here...");
+                        let handle = Handle::current();
+                        let _ = handle.enter();
+                        let res = futures::executor::block_on(sys.clone().lock().unwrap().stop());
+                        log::trace!("Result from stop: {:?}", res);
                         f(&mut sys, &channel, deferred);
                         break;
                     }
@@ -94,7 +99,7 @@ impl SystemServer {
 }
 
 impl SystemServer {
-    pub fn js_new(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
+    pub fn js_init(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
         let root_dir = cx.argument::<JsString>(0)?.value(&mut cx);
         let system_server =
             SystemServer::new(&mut cx, root_dir).or_else(|err| cx.throw_error(err.to_string()))?;
@@ -117,7 +122,7 @@ impl SystemServer {
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.start());
 
-                info!("In start: {:?}", res);
+                log::trace!("In start: {:?}", res);
                 // new Promise((resolve) => resolve())
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     Ok(cx.boolean(true))
@@ -135,12 +140,13 @@ impl SystemServer {
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
 
         system_server
-            .send(deferred, move |sys, channel, deferred| {
+            .close(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.stop());
 
+                log::info!("Close called");
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
                     match res {
                         Err(e) => Ok(cx.string(e.to_string())),

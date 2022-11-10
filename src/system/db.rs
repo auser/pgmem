@@ -79,9 +79,9 @@ impl DB {
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
-        info!("Creating new database");
+        log::info!("Creating new database");
         let (db_name, conn_url) = self.connection.create_new_db(name).await?;
-        info!(
+        log::info!(
             "New database created. Now running sql migration: {:?}",
             db_name
         );
@@ -95,7 +95,7 @@ impl DB {
     }
 
     pub async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
-        info!("Dropping database {}", db_name);
+        log::info!("Dropping database {}", db_name);
         match self.connection.drop_database(uri, db_name).await {
             Err(e) => {
                 error!("Error dropping database: {:?}", e.to_string());
@@ -106,7 +106,9 @@ impl DB {
     }
 
     pub async fn stop(&mut self) -> anyhow::Result<bool> {
-        self.connection.stop().await
+        let res = self.connection.stop().await?;
+        log::debug!("Stopped connection");
+        Ok(res)
     }
 }
 
@@ -144,7 +146,7 @@ impl DBLock {
         match self {
             DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
-                info!("Starting embedded postgresql database");
+                log::info!("Starting embedded postgresql database");
                 // start postgresql database
                 match pg.start_db().await {
                     Ok(e) => {
@@ -171,7 +173,7 @@ impl DBLock {
             }
             DBLock::Embedded(pg) => {
                 let res = pg.create_database(&name).await;
-                info!("Create database result: {:?}", res);
+                log::info!("Create database result: {:?}", res);
                 let conn_url = pg.full_db_uri(&name);
                 Ok((name, conn_url))
             }
@@ -188,7 +190,7 @@ impl DBLock {
                 String::from(format!(
                     r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
         FROM pg_stat_activity
-        WHERE pg_stat_activity.datname = "{}";
+        WHERE pg_stat_activity.datname = '{}';
         "#,
                     db_name
                 )),
@@ -203,7 +205,7 @@ impl DBLock {
                     return Err(anyhow::anyhow!(e.to_string()));
                 }
                 Ok(_) => {
-                    info!("Dropped database in DBLock: {}", db_name);
+                    log::info!("Dropped database in DBLock: {}", db_name);
                     Ok(())
                 }
             },
@@ -211,16 +213,20 @@ impl DBLock {
     }
 
     async fn stop(&mut self) -> anyhow::Result<bool> {
+        log::trace!("Called stop in db");
         match self {
             DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
-                info!("Stopping embedded postgresql database");
+                log::info!("Stopping embedded postgresql database");
                 // start postgresql database
                 match pg.stop_db().await {
-                    Ok(_e) => Ok(true),
+                    Ok(_e) => {
+                        log::debug!("Database successfully stopped");
+                        Ok(true)
+                    }
                     Err(e) => {
-                        error!("An error occurred stopping database: {:?}", e);
-                        return Err(anyhow::anyhow!(e.to_string()));
+                        log::error!("An error occurred stopping database: {:?}", e);
+                        Err(anyhow::anyhow!(e.to_string()))
                     }
                 }
             }
@@ -293,7 +299,7 @@ impl DBType {
                 timeout,
                 host,
             } => {
-                info!("initializing an embedded postgresql database");
+                log::info!("initializing an embedded postgresql database");
                 let database_dir = root_path.join("db").to_owned();
 
                 self.clear_out_db_path(database_dir.clone())?;
@@ -311,7 +317,7 @@ impl DBType {
                     auth_method: PgAuthMethod::Plain,
                 };
 
-                info!("Initializing embedded postgresql database");
+                log::info!("Initializing embedded postgresql database");
                 let mut pg = match PgEmbed::new(
                     pg_settings,
                     Self::get_fetch_settings(host.clone())?,
@@ -325,7 +331,7 @@ impl DBType {
                     }
                 };
 
-                info!("Setting up embedded postgresql database");
+                log::info!("Setting up embedded postgresql database");
                 match pg.setup().await {
                     Ok(_) => {}
                     Err(e) => {
@@ -334,15 +340,15 @@ impl DBType {
                     }
                 };
 
-                info!("Embedded postgresql database successfully started");
-                info!("Database connection URI: {}", &pg.db_uri);
+                log::info!("Embedded postgresql database successfully started");
+                log::info!("Database connection URI: {}", &pg.db_uri);
                 Ok(DBLock::Embedded(Box::new(pg)))
             }
         }
     }
 
     fn clear_out_db_path(&self, database_dir: PathBuf) -> anyhow::Result<()> {
-        info!("initializing an embedded postgresql database");
+        log::info!("initializing an embedded postgresql database");
         if database_dir.exists() {
             let database_dir_str = database_dir.to_str().unwrap();
             if database_dir.is_dir() {

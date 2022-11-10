@@ -27,11 +27,11 @@ pub fn read_all_migrations(root_path: PathBuf) -> String {
     debug!("read_all_migrations in : {:?}", root_path);
     let mut sql = String::new();
     let pattern = String::from(root_path.join("**/*.sql").to_str().unwrap());
-    info!("Looking in directory: {:?}", pattern);
+    log::info!("Looking in directory: {:?}", pattern);
     for entry in glob(pattern.as_str()).expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                info!("Found path: {:#?}", path);
+                log::info!("Found path: {:#?}", path);
                 match File::open(path) {
                     Err(e) => {
                         error!("Unable to open {:?}", e);
@@ -51,6 +51,6 @@ pub fn read_all_migrations(root_path: PathBuf) -> String {
         }
     }
 
-    info!("SQL to run everytime: {:#?}", sql);
+    log::info!("SQL to run everytime: {:#?}", sql);
     sql
 }

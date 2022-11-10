@@ -54,7 +54,7 @@ impl SystemInner {
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         if self.running {
-            info!("Creating new database");
+            log::info!("Creating new database");
             match self.db_lock.lock().unwrap().create_new_db(name).await {
                 // match self.db_lock.create_new_db(name).await {
                 Err(e) => {
@@ -62,7 +62,7 @@ impl SystemInner {
                     bail!(e.to_string())
                 }
                 Ok(res) => {
-                    info!("Created new database: {:?}", res);
+                    log::info!("Created new database: {:?}", res);
                     Ok(res)
                 }
             }
@@ -74,7 +74,7 @@ impl SystemInner {
 
     pub async fn drop_database(&mut self, uri: String, name: String) -> anyhow::Result<()> {
         if self.running {
-            info!("Dropping database: {}", name);
+            log::trace!("Dropping database: {}", name);
             let mut lock = self.db_lock.lock().unwrap();
             match lock.drop_database(uri, name).await {
                 Err(e) => {
@@ -92,14 +92,15 @@ impl SystemInner {
         // Incase we're not running, don't stop
         if self.running {
             let mut db_lock = self.db_lock.lock().unwrap();
+            log::debug!("System called stop on the db_lock");
             match db_lock.stop().await {
                 Err(e) => {
-                    error!("Unable to stop database: {:?}", e.to_string());
+                    log::error!("Unable to stop database: {:?}", e.to_string());
                     bail!(e.to_string())
                 }
                 Ok(res) => {
                     self.running = false;
-                    info!("DBLock stopped");
+                    log::info!("DBLock stopped");
                     Ok(res)
                 }
             }
