@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tempdir::TempDir;
 
 use serde::{Deserialize, Serialize};
 
@@ -34,11 +35,15 @@ impl Into<DBType> for ConfigDatabase {
 
 impl Default for ConfigDatabase {
     fn default() -> Self {
+        let root_path = match TempDir::new("db") {
+            Ok(v) => String::from(v.path().to_str().unwrap()),
+            Err(_) => ".".to_string(),
+        };
         Self {
             db_type: "Embedded".to_string(),
             uri: "127.0.0.1".to_string(),
             timeout: Some(Duration::from_secs(5)),
-            root_path: Some(".".to_string()),
+            root_path: Some(root_path.to_string()),
             username: Some("postgres".to_string()),
             password: Some("postgres".to_string()),
             persistent: Some(false),

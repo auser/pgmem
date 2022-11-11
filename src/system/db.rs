@@ -7,7 +7,10 @@ use pg_embed::{
     postgres::{PgEmbed, PgSettings},
 };
 use portpicker::pick_unused_port;
-use sqlx::{postgres::PgPoolOptions, Executor};
+use sqlx::{
+    postgres::{PgPoolOptions, PgRow},
+    Executor, Row,
+};
 
 use std::{
     fmt::Debug,
@@ -53,13 +56,10 @@ impl DB {
             timeout: config.timeout.unwrap(),
             host: config.host.unwrap(),
         };
-        let connection = match db_type.init_conn_string().await {
-            Err(e) => {
-                error!("Error creating connection: {:?}", e.to_string());
-                panic!("ERROR: {:?}", e.to_string())
-            }
-            Ok(r) => r,
-        };
+        let connection = db_type
+            .init_conn_string()
+            .await
+            .expect("Unable to create a connection");
         Self { connection }
     }
 
@@ -102,6 +102,36 @@ impl DB {
                 Err(anyhow::anyhow!(e.to_string()))
             }
             Ok(_) => Ok(()),
+        }
+    }
+
+    #[allow(unused)]
+    pub async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
+        log::info!("Listing databases");
+        match self.connection.list_databases().await {
+            Err(e) => {
+                log::error!("Error listing databases: {:?}", e.to_string());
+                Err(anyhow::anyhow!(e.to_string()))
+            }
+            Ok(r) => Ok(r),
+        }
+    }
+
+    #[allow(unused)]
+    pub async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
+        log::info!(
+            "Checking if this instance contains the database: {}",
+            db_name
+        );
+        match self.connection.has_database(db_name).await {
+            Err(e) => {
+                log::error!(
+                    "Error checking if database is contained: {:?}",
+                    e.to_string()
+                );
+                Err(anyhow::anyhow!(e.to_string()))
+            }
+            r => r,
         }
     }
 
@@ -190,6 +220,10 @@ impl DBLock {
         let uri2 = uri.clone();
         let parsed = Url::parse(uri2.as_str()).unwrap();
         let cleaned: &str = &parsed[..Position::AfterPort];
+
+        if !self.has_database(db_name.clone()).await? {
+            return Err(anyhow::anyhow!("Database is not present"));
+        }
         let _res = self
             .sql(
                 cleaned.to_owned(),
@@ -215,6 +249,48 @@ impl DBLock {
                     Ok(())
                 }
             },
+        }
+    }
+
+    async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
+        let uri = self.as_uri();
+        let system_databases = vec![
+            "template0".to_string(),
+            "template1".to_string(),
+            "postgres".to_string(),
+        ];
+        let database_rows = self
+            .sql_fetch_all(
+                String::from(uri),
+                String::from("SELECT datname FROM pg_database;"),
+            )
+            .await?
+            .into_iter()
+            .filter_map(|row| row.try_get("datname").ok())
+            .filter(|name| !system_databases.contains(&name))
+            .collect();
+
+        Ok(database_rows)
+    }
+
+    async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
+        let uri = self.as_uri();
+
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .connect(&uri)
+            .await?;
+
+        match sqlx::query("SELECT datname FROM pg_database WHERE datname = $1")
+            .bind(db_name)
+            .fetch_optional(&pool)
+            .await
+        {
+            Err(e) => {
+                log::error!("Error querying db: {}", e.to_string());
+                Err(anyhow::anyhow!(e.to_string()))
+            }
+            Ok(r) => Ok(r.is_some()),
         }
     }
 
@@ -254,6 +330,29 @@ impl DBLock {
             }
             DBLock::Embedded(_pg) => match pool.execute(sql.as_str()).await {
                 Ok(_r) => Ok(()),
+                Err(e) => {
+                    error!("Error occurrend when migrating: {:?}", e.to_string());
+                    Err(anyhow::anyhow!(e.to_string()))
+                }
+            },
+        }
+    }
+
+    async fn sql_fetch_all(&mut self, uri: String, sql: String) -> anyhow::Result<Vec<PgRow>> {
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .connect(&uri)
+            .await?;
+
+        match self {
+            DBLock::External(_s) => {
+                // TODO: implement, maybe?
+                Err(anyhow::anyhow!(
+                    "Not implemented for external databases yet"
+                ))
+            }
+            DBLock::Embedded(_pg) => match pool.fetch_all(sql.as_str()).await {
+                Ok(r) => Ok(r),
                 Err(e) => {
                     error!("Error occurrend when migrating: {:?}", e.to_string());
                     Err(anyhow::anyhow!(e.to_string()))
@@ -306,9 +405,10 @@ impl DBType {
                 host,
             } => {
                 log::info!("initializing an embedded postgresql database");
-                let database_dir = root_path.join("db").to_owned();
+                let database_dir = root_path.join("db");
+                let _ = fs::create_dir_all(database_dir.as_path());
 
-                self.clear_out_db_path(database_dir.clone())?;
+                // self.clear_out_db_path(database_dir.clone())?;
                 // self.kill_any_existing_postgres_process()?;
 
                 let pg_settings = PgSettings {
@@ -338,13 +438,7 @@ impl DBType {
                 };
 
                 log::info!("Setting up embedded postgresql database");
-                match pg.setup().await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("An error occurred setting up: {:?}", e);
-                        return Err(anyhow::anyhow!(e.to_string()));
-                    }
-                };
+                pg.setup().await.expect("Unable to setup database");
 
                 log::info!("Embedded postgresql database successfully started");
                 log::info!("Database connection URI: {}", &pg.db_uri);
@@ -354,18 +448,18 @@ impl DBType {
     }
 
     fn clear_out_db_path(&self, database_dir: PathBuf) -> anyhow::Result<()> {
-        log::info!("initializing an embedded postgresql database");
-        if database_dir.exists() {
+        if false && database_dir.exists() {
             let database_dir_str = database_dir.to_str().unwrap();
             if database_dir.is_dir() {
                 if database_dir_str != "/" && database_dir_str != env!("CARGO_MANIFEST_DIR") {
-                    fs::remove_dir_all(database_dir_str)?;
+
+                    // fs::remove_dir_all(database_dir_str)?;
                 }
             } else {
-                fs::remove_file(database_dir_str)?;
+                // fs::remove_file(database_dir_str)?;
             }
         }
-        fs::create_dir_all(&database_dir)?;
+        // fs::create_dir_all(&database_dir)?;
 
         Ok(())
     }
@@ -422,4 +516,51 @@ mod test {
 
     #[test]
     fn test_clear_out_db_path() {}
+    #[tokio::test]
+    async fn test_db_can_list_databases() {
+        let mut db = DB::new_embedded(ConfigDatabase::default()).await;
+        let _ = db.start().await;
+        let db_uri = db.create_new_db(None).await.unwrap();
+        let db_name = convert_db_url_to_db_name(db_uri);
+        let database_names = db.list_databases().await.unwrap();
+        assert_eq!(database_names, [db_name]);
+    }
+    #[tokio::test]
+    async fn test_db_checks_if_contains_database() {
+        let mut db = DB::new_embedded(ConfigDatabase::default()).await;
+        let _ = db.start().await;
+        let db_uri = db.create_new_db(None).await.unwrap();
+        let db_name = convert_db_url_to_db_name(db_uri);
+        let contains_db = db.has_database(db_name).await;
+        assert!(contains_db.unwrap());
+        let contains_db = db.has_database("not_in_the_db".to_string()).await.unwrap();
+        assert!(!contains_db);
+    }
+
+    #[tokio::test]
+    async fn test_db_does_not_panic_if_database_is_not_present_when_trying_to_drop() {
+        let mut db = DB::new_embedded(ConfigDatabase::default()).await;
+        let _ = db.start().await;
+        let db_uri = db.create_new_db(None).await.unwrap();
+        let contains_db = db
+            .drop_database(String::from(db_uri.clone()), "not_a_database".to_string())
+            .await;
+        assert!(contains_db.is_err());
+        let db_name = convert_db_url_to_db_name(String::from(db_uri.clone()));
+        let res = db
+            .drop_database(String::from(db_uri.clone()), db_name)
+            .await;
+        assert!(res.is_ok());
+    }
+
+    fn convert_db_url_to_db_name(db_uri: String) -> String {
+        let db_url = Url::parse(&db_uri).unwrap();
+        let path = db_url.path();
+        let db_name = path
+            .char_indices()
+            .next()
+            .and_then(|(i, _)| path.get(i + 1..))
+            .unwrap_or("");
+        String::from(db_name)
+    }
 }

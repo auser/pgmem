@@ -57,3 +57,6 @@ env_logger = "0.9.3"
 version = "0.10"
 default-features = false
 features = ["napi-6", "channel-api", "promise-api", "try-catch-api"]
+
+[profile.release]
+panic = 'abort'
