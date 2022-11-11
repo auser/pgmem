@@ -1,6 +1,6 @@
 {
   "name": "@auser/pmem",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,7 @@
     "build-release:ts": "npm run build:ts",
     "test": "mocha",
     "clean": "neon clean && rm -rf ./node_modules",
-    "release": "run-s test release:version release:tags",
+    "release": "run-s build-release test release:version release:tags",
     "release:version": "standard-version",
     "release:tags": "git push && git push --tags"
   },
