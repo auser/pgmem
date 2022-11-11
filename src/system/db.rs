@@ -80,7 +80,7 @@ impl DB {
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
         log::info!("Creating new database");
-        let (db_name, conn_url) = self.connection.create_new_db(name).await?;
+        let (_db_name, conn_url) = self.connection.create_new_db(name).await?;
         // log::info!(
         //     "New database created. Now running sql migration: {:?}",
         //     db_name

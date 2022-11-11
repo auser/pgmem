@@ -36,8 +36,8 @@ describe('Database', () => {
     await inst.stop();
   })
 
-  it.only('can load sql', async () => {
-    const sql = await (await readFile(join(__dirname, "fixtures", "migrations", "migration.sql"))).toString();
+  it('can load sql', async () => {
+    const sql = (await readFile(join(__dirname, "fixtures", "migrations", "migration.sql"))).toString();
 
     const inst = await start_new_db();;
     const connectionString = await inst.new_db();
@@ -46,8 +46,8 @@ describe('Database', () => {
     const pool = new Pool({
       connectionString,
     })
-    console.log('before query');
     const {rows} = await pool.query("SELECT * FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema';");
+    pool.end();
     expect(rows.length).equal(2);
     const table_names = rows.map((r) => r.tablename).sort();
     expect(table_names).to.have.members(['AdminUser', 'User']);
