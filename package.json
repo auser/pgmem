@@ -8,8 +8,8 @@
   "scripts": {
     "build": "run-s build:package build:ts",
     "build:package": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
-    "build:ts": "tsbb build --file-names src/index.ts --esm dist/esm --cjs dist",
-    "postbuild:ts": "cp ./index.node dist/index.node && cp ./index.node dist/esm/index.node && rm ./index.node",
+    "build:ts": "tsbb build --file-names src/index.ts --no-esm",
+    "postbuild:ts": "mv ./index.node dist/index.node",
     "build-debug": "npm run build --",
     "build-release": "run-s build-release:*",
     "build-release:package": "npm run build:package -- --release",
@@ -43,6 +43,7 @@
     "chai": "^4.3.7",
     "husky": "^8.0.2",
     "mocha": "^10.1.0",
+    "neon-cli": "^0.10.1",
     "npm-run-all": "^4.1.5",
     "pg": "^8.8.0",
     "standard-version": "^9.5.0",

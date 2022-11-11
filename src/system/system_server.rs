@@ -255,6 +255,7 @@ impl SystemServer {
 
         let uri = cx.argument::<JsString>(0)?.value(&mut cx);
         let db_name = cx.argument::<JsString>(1)?.value(&mut cx);
+        log::debug!("Calling drop database at: {:?} for {:?}", uri, db_name);
 
         system_server
             .send(deferred, move |sys, channel, deferred| {
