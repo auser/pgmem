@@ -41,7 +41,7 @@ describe('Database', () => {
     console.log(db_uri);
     await inst.drop_db(db_uri)
     await inst.stop();
-  });
+  }, 2000);
 
   it('drops a database', async () => {
     const inst = await start_new_db();;

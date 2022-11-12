@@ -1,5 +1,5 @@
 use anyhow::bail;
-use futures::TryFutureExt;
+use futures::{executor, TryFutureExt};
 use url::Url;
 
 use pg_embed::{
@@ -10,14 +10,15 @@ use pg_embed::{
 use portpicker::pick_unused_port;
 use sqlx::{
     migrate::MigrateDatabase,
-    postgres::{PgPoolOptions, PgRow},
-    Executor, Pool, Postgres, Row,
+    postgres::{PgConnectOptions, PgPoolOptions, PgRow},
+    Connection, Executor, PgConnection, Pool, Postgres, Row,
 };
 
 use std::{
     fmt::Debug,
     fs::{self},
     path::PathBuf,
+    pin::Pin,
     time::Duration,
 };
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System as SysInfoSystem, SystemExt};
@@ -165,6 +166,17 @@ impl Debug for DBLock {
     }
 }
 
+impl Drop for DBLock {
+    fn drop(&mut self) {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+                runtime.block_on(self.drop_database());
+            });
+        });
+    }
+}
+
 impl DBLock {
     pub fn as_uri(&self) -> &str {
         match self {
@@ -241,6 +253,7 @@ impl DBLock {
         log::info!("All connections are dead... dropping the database: {}", uri);
         match self {
             DBLock::External(_s) => {
+                log::info!("Trying to drop database at uri: {:?}", uri);
                 let res = Postgres::drop_database(&uri)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))
                     .await?;
@@ -261,17 +274,22 @@ impl DBLock {
     }
 
     async fn kill_all_connections(&mut self, db_name: String) -> anyhow::Result<()> {
-        let pool = self.get_pool().await?;
+        let mut conn = self.get_connection().await?;
 
-        let _res = sqlx::query(
-            r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
-        FROM pg_stat_activity
-        WHERE pg_stat_activity.datname = '$1';
+        let res = conn
+            .execute(sqlx::query(
+                format!(
+                    r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
+                    FROM pg_stat_activity
+                    WHERE datname = '{}';
         "#,
-        )
-        .bind(db_name)
-        .execute(&pool)
-        .await?;
+                    &db_name
+                )
+                .as_str(),
+            ))
+            .await?;
+
+        log::debug!("Result: {:?}", res);
 
         Ok(())
     }
@@ -298,23 +316,28 @@ impl DBLock {
     }
 
     async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
-        let pool = self.get_pool().await?;
+        // let pool = self.get_pool().await?;
+        let mut conn = self.get_connection().await?;
 
-        match sqlx::query("SELECT datname FROM pg_database WHERE datname = $1")
-            .bind(db_name)
-            .fetch_optional(&pool)
-            .await
-        {
-            Err(e) => {
-                log::error!("Error querying db: {}", e.to_string());
-                Err(anyhow::anyhow!(e.to_string()))
-            }
-            Ok(r) => Ok(r.is_some()),
+        let res = conn
+            .fetch_optional(sqlx::query(
+                format!(
+                    "SELECT datname FROM pg_database WHERE datname = '{}'",
+                    db_name
+                )
+                .as_str(),
+            ))
+            .await?;
+        match res {
+            None => Ok(false),
+            Some(_r) => Ok(true),
         }
     }
 
     async fn stop(&mut self) -> anyhow::Result<bool> {
         log::trace!("Called stop in db");
+        // let pool = self.get_pool().await?;
+
         match self {
             DBLock::External(_s) => Ok(true),
             DBLock::Embedded(pg) => {
@@ -334,12 +357,21 @@ impl DBLock {
         }
     }
 
+    async fn get_connection(&mut self) -> anyhow::Result<PgConnection> {
+        let uri = self.as_uri();
+        log::debug!("Connecting to url: {}", uri);
+        let conn = PgConnection::connect(&uri).await?;
+        Ok(conn)
+    }
+
     async fn get_pool(&mut self) -> anyhow::Result<Pool<Postgres>> {
         let uri = self.as_uri();
         log::debug!("Using uri: {:?}", uri);
 
         let pool = PgPoolOptions::new()
+            .min_connections(0)
             .max_connections(32)
+            .acquire_timeout(Duration::from_millis(1000))
             .connect(&uri)
             .await?;
         Ok(pool)

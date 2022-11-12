@@ -3,10 +3,10 @@ use tempdir::TempDir;
 
 use serde::{Deserialize, Serialize};
 
-use super::db::DBType;
+use super::{db::DBType, utils::deserialize_optional_datetime_from_sec};
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
 pub struct ConfigDatabase {
     pub db_type: String,
     pub uri: String,
@@ -15,6 +15,10 @@ pub struct ConfigDatabase {
     pub password: Option<String>,
     pub persistent: Option<bool>,
     pub port: Option<i16>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_datetime_from_sec"
+    )]
     pub timeout: Option<Duration>,
     pub host: Option<String>,
 }
@@ -45,7 +49,7 @@ impl Default for ConfigDatabase {
         Self {
             db_type: "Embedded".to_string(),
             uri: "127.0.0.1".to_string(),
-            timeout: Some(Duration::from_secs(5)),
+            timeout: Some(Duration::from_secs(15)),
             root_path: Some(root_path.to_string()),
             username: Some("postgres".to_string()),
             password: Some("postgres".to_string()),
@@ -54,5 +58,34 @@ impl Default for ConfigDatabase {
             // max_connections: 5,
             host: Some("https://repo1.maven.org".to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::serde_json_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_config_deserializes_duration() {
+        serde_json_eq!(
+            ConfigDatabase,
+            "{\"uri\":\"postgres://postgres:postgres@localhost:5432\", \"db_type\":\"Embedded\"}",
+            timeout,
+            Some(Duration::from_secs(15))
+        );
+        serde_json_eq!(
+            ConfigDatabase,
+            "{\"uri\":\"postgres://postgres:postgres@localhost:5432\", \"db_type\":\"Embedded\", \"timeout\":\"\"}",
+            timeout,
+            None
+        );
+        serde_json_eq!(
+            ConfigDatabase,
+            "{\"uri\":\"postgres://postgres:postgres@localhost:5432\", \"db_type\":\"Embedded\", \"timeout\":1234}",
+            timeout,
+            Some(Duration::from_secs(1234))
+        );
     }
 }

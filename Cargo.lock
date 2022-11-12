@@ -1437,8 +1437,10 @@ dependencies = [
  "pg-embed",
  "portpicker",
  "serde",
+ "serde-aux",
  "serde_bytes",
  "serde_derive",
+ "serde_json",
  "sqlx 0.6.2",
  "sysinfo",
  "tempdir",
@@ -1812,6 +1814,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d193d69bae983fc11a79df82342761dfbf28a99fc8d203dca4c3c1b590948965"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-aux"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb6a3148cb21f1afb585b9ce6aeea9e58bd02c37ddb336277af10396ca3574fd"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
