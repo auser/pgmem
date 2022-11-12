@@ -10,13 +10,48 @@ const {
   execute_sql,
 } = require("./index.node");
 
+export enum DB_TYPE {
+  EXTERNAL = "External",
+  EMBEDDED = "Embedded",
+}
+
+// pub db_type: String,
+// pub uri: String,
+// pub root_path: Option<String>,
+// pub username: Option<String>,
+// pub password: Option<String>,
+// pub persistent: Option<bool>,
+// pub port: Option<i16>,
+// pub timeout: Option<Duration>,
+// pub host: Option<String>,
+export type DatabaseOptions = {
+  db_type: DB_TYPE;
+  uri: string;
+  root_path?: string;
+  username?: string;
+  password?: string;
+  persistent?: boolean;
+  port?: number;
+  timeout?: number;
+  host?: string;
+};
+
+const default_options: DatabaseOptions = {
+  db_type: DB_TYPE.EMBEDDED,
+  uri: "127.0.0.1",
+  username: "postgres",
+  password: "postgres",
+  port: 5434,
+  timeout: 1000,
+  host: "127.0.0.1",
+};
 export class Database {
   db: any;
-  root_dir: String;
+  options: DatabaseOptions;
   used = false;
 
-  constructor(root_dir: String) {
-    this.root_dir = root_dir ?? ".";
+  constructor(options: DatabaseOptions) {
+    this.options = { ...default_options, ...options };
   }
 
   async start() {
@@ -54,7 +89,7 @@ export class Database {
 
   async _get_db() {
     if (!this.db) {
-      this.db = init_db(this.root_dir);
+      this.db = init_db(this.options);
     }
     return this.db;
   }

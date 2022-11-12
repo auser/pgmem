@@ -1,3 +1,5 @@
+extern crate serde_derive;
+
 extern crate tempdir;
 use neon::prelude::*;
 

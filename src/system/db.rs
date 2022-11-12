@@ -1,5 +1,6 @@
 use anyhow::bail;
-use url::{Position, Url};
+use futures::TryFutureExt;
+use url::Url;
 
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
@@ -8,8 +9,9 @@ use pg_embed::{
 };
 use portpicker::pick_unused_port;
 use sqlx::{
+    migrate::MigrateDatabase,
     postgres::{PgPoolOptions, PgRow},
-    Executor, Row,
+    Executor, Pool, Postgres, Row,
 };
 
 use std::{
@@ -173,7 +175,7 @@ impl DBLock {
 
     pub fn full_db_uri(&self, db_name: &str) -> String {
         match self {
-            DBLock::External(conn_string) => String::from(conn_string),
+            DBLock::External(conn_string) => String::from(format!("{}/{}", conn_string, db_name)),
             DBLock::Embedded(pg) => (&pg).full_db_uri(db_name),
         }
     }
@@ -202,10 +204,12 @@ impl DBLock {
         let name = name.unwrap_or_else(|| cuid::cuid().unwrap().to_string());
         match self {
             DBLock::External(_s) => {
-                // TODO: Implement, maybe?
-                Err(anyhow::anyhow!(
-                    "Not implemented for external databases, yet"
-                ))
+                let uri = self.full_db_uri(&name);
+                // let pool = self.get_pool().await?;
+                let _res = Postgres::create_database(&uri)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))
+                    .await?;
+                Ok((name, uri))
             }
             DBLock::Embedded(pg) => {
                 let res = pg.create_database(&name).await;
@@ -218,8 +222,8 @@ impl DBLock {
 
     async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
         let uri2 = uri.clone();
-        let parsed = Url::parse(uri2.as_str()).unwrap();
-        let cleaned: &str = &parsed[..Position::AfterPort];
+        let _parsed = Url::parse(uri2.as_str()).unwrap();
+        // let cleaned: &str = &parsed[..Position::AfterPort];
 
         log::info!("Checking if the database is present");
 
@@ -230,21 +234,19 @@ impl DBLock {
 
         log::info!("Database {} is present, proceeding to drop", db_name);
 
-        let _res = self
-            .sql(
-                cleaned.to_owned(),
-                String::from(format!(
-                    r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
-        FROM pg_stat_activity
-        WHERE pg_stat_activity.datname = '{}';
-        "#,
-                    db_name
-                )),
-            )
-            .await;
+        self.kill_all_connections(db_name.clone())
+            .await
+            .expect("Unable to kill all connections");
 
+        log::info!("All connections are dead... dropping the database: {}", uri);
         match self {
-            DBLock::External(_s) => Ok(()),
+            DBLock::External(_s) => {
+                let res = Postgres::drop_database(&uri)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))
+                    .await?;
+                log::info!("Database dropped: {:?}", res);
+                Ok(())
+            }
             DBLock::Embedded(pg) => match pg.drop_database(db_name.as_str()).await {
                 Err(e) => {
                     log::error!("Error occurred dropping database: {:?}", e.to_string());
@@ -256,6 +258,22 @@ impl DBLock {
                 }
             },
         }
+    }
+
+    async fn kill_all_connections(&mut self, db_name: String) -> anyhow::Result<()> {
+        let pool = self.get_pool().await?;
+
+        let _res = sqlx::query(
+            r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = '$1';
+        "#,
+        )
+        .bind(db_name)
+        .execute(&pool)
+        .await?;
+
+        Ok(())
     }
 
     async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
@@ -280,13 +298,7 @@ impl DBLock {
     }
 
     async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
-        let uri = self.as_uri();
-        log::debug!("Using uri: {:?}", uri);
-
-        let pool = PgPoolOptions::new()
-            .max_connections(32)
-            .connect(&uri)
-            .await?;
+        let pool = self.get_pool().await?;
 
         match sqlx::query("SELECT datname FROM pg_database WHERE datname = $1")
             .bind(db_name)
@@ -320,6 +332,17 @@ impl DBLock {
                 }
             }
         }
+    }
+
+    async fn get_pool(&mut self) -> anyhow::Result<Pool<Postgres>> {
+        let uri = self.as_uri();
+        log::debug!("Using uri: {:?}", uri);
+
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .connect(&uri)
+            .await?;
+        Ok(pool)
     }
 
     async fn sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {

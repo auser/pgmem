@@ -21,14 +21,17 @@ pub struct ConfigDatabase {
 
 impl Into<DBType> for ConfigDatabase {
     fn into(self) -> DBType {
-        DBType::Embedded {
-            root_path: self.root_path.unwrap().into(),
-            port: self.port.unwrap() as i16,
-            username: self.username.unwrap(),
-            password: self.password.unwrap(),
-            persistent: self.persistent.unwrap(),
-            timeout: self.timeout.unwrap(),
-            host: self.host.unwrap(),
+        match self.db_type.as_str() {
+            "External" => DBType::External(self.uri.to_string()),
+            _ => DBType::Embedded {
+                root_path: self.root_path.unwrap().into(),
+                port: self.port.unwrap() as i16,
+                username: self.username.unwrap(),
+                password: self.password.unwrap(),
+                persistent: self.persistent.unwrap(),
+                timeout: self.timeout.unwrap(),
+                host: self.host.unwrap(),
+            },
         }
     }
 }

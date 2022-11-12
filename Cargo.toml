@@ -51,6 +51,9 @@ log = "0.4.17"
 ansi_term = { version = "0.12" }
 atty = { version = "0.2" }
 env_logger = "0.9.3"
+serde_derive = "1.0.147"
+serde_bytes = "0.11.7"
+neon-serde3 = "0.10.0"
 
 
 [dependencies.neon]

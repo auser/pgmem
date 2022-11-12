@@ -35,7 +35,15 @@ describe('Database', () => {
     await inst.stop();
   })
 
-  it.only('drops a database', async () => {
+  it.only('can connect to an external postgres database', async () => {
+    let inst = await start_new_db({db_type: "External", uri: "postgres://postgres:postgres@localhost:5432"});
+    const db_uri = await inst.new_db();
+    console.log(db_uri);
+    await inst.drop_db(db_uri)
+    await inst.stop();
+  });
+
+  it('drops a database', async () => {
     const inst = await start_new_db();;
     const db_uri = await inst.new_db();
     expect(db_uri.indexOf("postgres://postgres:postgres@localhost")).equal(0);

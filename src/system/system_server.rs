@@ -7,6 +7,8 @@ use neon::{prelude::*, types::Deferred};
 use tokio::runtime::Handle;
 use tracing::*;
 
+use crate::system::config::ConfigDatabase;
+
 use super::system::System;
 use super::utils::{block_on, runtime};
 
@@ -38,7 +40,7 @@ pub struct SystemServer {
 impl Finalize for SystemServer {}
 
 impl SystemServer {
-    fn new<'a, C>(cx: &mut C, root_dir: String) -> anyhow::Result<Self>
+    fn new<'a, C>(cx: &mut C, config_database: ConfigDatabase) -> anyhow::Result<Self>
     where
         C: Context<'a>,
     {
@@ -49,7 +51,7 @@ impl SystemServer {
         let channel = cx.channel();
 
         let rt = runtime(cx).unwrap(); //.unwrap_or_else(|err| anyhow::anyhow!(err.to_string()));
-        let system = rt.block_on(async move { System::initialize(root_dir).await.unwrap() });
+        let system = rt.block_on(async move { System::initialize(config_database).await.unwrap() });
         // We need a channel for communication back to JS
         let mut sys = Arc::new(Mutex::new(system));
 
@@ -135,9 +137,20 @@ impl SystemServer {
 
 impl SystemServer {
     pub fn js_init(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
-        let root_dir = cx.argument::<JsString>(0)?.value(&mut cx);
-        let system_server =
-            SystemServer::new(&mut cx, root_dir).or_else(|err| cx.throw_error(err.to_string()))?;
+        let cfg = cx.argument::<JsValue>(0)?;
+
+        println!("cfg: {:?}", cfg);
+
+        // let config_database: ConfigDatabase = match neon_serde3::from_value(&mut cx, cfg) {
+        //     Ok(v) => v,
+        //     Err(_) => ConfigDatabase::default(),
+        // };
+        let config_database: ConfigDatabase = neon_serde3::from_value(&mut cx, cfg).unwrap();
+
+        println!("config_database: {:?}", config_database);
+
+        let system_server = SystemServer::new(&mut cx, config_database)
+            .or_else(|err| cx.throw_error(err.to_string()))?;
         debug!("Got a system server handle");
 
         Ok(cx.boxed(system_server))
@@ -309,6 +322,6 @@ impl SendResultExt for Result<(), tokio::sync::mpsc::error::SendError<SystemMess
 #[cfg(test)]
 mod test {
 
-    #[test]
-    fn test_system_can_be_created() {}
+    // #[test]
+    // fn test_system_can_be_created() {}
 }
