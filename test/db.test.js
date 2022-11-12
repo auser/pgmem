@@ -5,14 +5,21 @@ const expect = require('chai').expect
 const { Pool, Client } = require('pg')
 const { readFile } = require('fs/promises');
 const { join } = require('path');
+const { sleep } = require("./utils");
 
 describe('Database', () => {
+  let dbs = []
   const start_new_db = async (...args) => {
     let inst = new Database(...args);
+    dbs.push(inst);
     
     await inst.start();
     return inst;
   }
+
+  afterAll(async () => {
+    await Promise.all(dbs.map(async (db) => db.stop))
+  })
 
   it('creates a new database', async () => {
     const inst = await start_new_db();
@@ -53,6 +60,24 @@ describe('Database', () => {
     expect(table_names).to.have.members(['AdminUser', 'User']);
 
     await inst.drop_db(connectionString);
+    await inst.stop();
+  })
+
+  it('can spin up a bunch of nodes at the same time', async () => {
+    const inst = await start_new_db();;
+    const db_uri = await inst.new_db();
+    await sleep(100);
+    const db_uri2 = await inst.new_db();
+    const db_uri3 = await inst.new_db();
+
+    await inst.drop_db(db_uri);
+    const db_uri4 = await inst.new_db();
+    await sleep(300);
+    await inst.drop_db(db_uri2);
+    await sleep(100);
+    await inst.drop_db(db_uri3);
+    await inst.drop_db(db_uri4);
+
     await inst.stop();
   })
 

@@ -98,7 +98,7 @@ impl DB {
         log::info!("Dropping database {}", db_name);
         match self.connection.drop_database(uri, db_name).await {
             Err(e) => {
-                error!("Error dropping database: {:?}", e.to_string());
+                log::error!("Error dropping database: {:?}", e.to_string());
                 Err(anyhow::anyhow!(e.to_string()))
             }
             Ok(_) => Ok(()),
@@ -222,8 +222,12 @@ impl DBLock {
         let cleaned: &str = &parsed[..Position::AfterPort];
 
         if !self.has_database(db_name.clone()).await? {
-            return Err(anyhow::anyhow!("Database is not present"));
-        }
+            log::error!("Database not contained");
+            return Err(anyhow::anyhow!("Database does not exist".to_string()));
+        };
+
+        log::debug!("Database {} is present, proceeding to drop", db_name);
+
         let _res = self
             .sql(
                 cleaned.to_owned(),
@@ -241,7 +245,7 @@ impl DBLock {
             DBLock::External(_s) => Ok(()),
             DBLock::Embedded(pg) => match pg.drop_database(db_name.as_str()).await {
                 Err(e) => {
-                    error!("Error occurred dropping database: {:?}", e.to_string());
+                    log::error!("Error occurred dropping database: {:?}", e.to_string());
                     return Err(anyhow::anyhow!(e.to_string()));
                 }
                 Ok(_) => {
@@ -275,6 +279,7 @@ impl DBLock {
 
     async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
         let uri = self.as_uri();
+        log::debug!("Using uri: {:?}", uri);
 
         let pool = PgPoolOptions::new()
             .max_connections(32)
@@ -447,6 +452,7 @@ impl DBType {
         }
     }
 
+    #[allow(unused)]
     fn clear_out_db_path(&self, database_dir: PathBuf) -> anyhow::Result<()> {
         if false && database_dir.exists() {
             let database_dir_str = database_dir.to_str().unwrap();

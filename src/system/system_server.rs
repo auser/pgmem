@@ -263,6 +263,7 @@ impl SystemServer {
                 let handle = Handle::current();
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.drop_database(uri, db_name));
+                println!("res: {:?}", res);
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {
@@ -307,7 +308,6 @@ impl SendResultExt for Result<(), tokio::sync::mpsc::error::SendError<SystemMess
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     #[test]
     fn test_system_can_be_created() {}

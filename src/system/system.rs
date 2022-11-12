@@ -78,8 +78,8 @@ impl SystemInner {
             let mut lock = self.db_lock.lock().unwrap();
             match lock.drop_database(uri, name).await {
                 Err(e) => {
-                    error!("Unable to drop database: {:?}", e.to_string());
-                    bail!(e.to_string())
+                    log::error!("Unable to drop database: {:?}", e.to_string());
+                    Err(anyhow::anyhow!(e.to_string()))
                 }
                 Ok(_) => Ok(()),
             }
@@ -164,7 +164,6 @@ impl System {
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     #[test]
     fn test_system_can_be_created() {}
