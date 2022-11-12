@@ -95,7 +95,7 @@ impl DB {
     }
 
     pub async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
-        log::info!("Dropping database {}", db_name);
+        log::info!("Attempting to drop the database {}", db_name);
         match self.connection.drop_database(uri, db_name).await {
             Err(e) => {
                 log::error!("Error dropping database: {:?}", e.to_string());
@@ -221,12 +221,14 @@ impl DBLock {
         let parsed = Url::parse(uri2.as_str()).unwrap();
         let cleaned: &str = &parsed[..Position::AfterPort];
 
+        log::info!("Checking if the database is present");
+
         if !self.has_database(db_name.clone()).await? {
             log::error!("Database not contained");
             return Err(anyhow::anyhow!("Database does not exist".to_string()));
         };
 
-        log::debug!("Database {} is present, proceeding to drop", db_name);
+        log::info!("Database {} is present, proceeding to drop", db_name);
 
         let _res = self
             .sql(
@@ -443,7 +445,13 @@ impl DBType {
                 };
 
                 log::info!("Setting up embedded postgresql database");
-                pg.setup().await.expect("Unable to setup database");
+                match pg.setup().await {
+                    Err(e) => {
+                        log::error!("Error setting up database: {}", e.to_string());
+                        return Err(anyhow::anyhow!(e.to_string()));
+                    }
+                    Ok(_) => {}
+                };
 
                 log::info!("Embedded postgresql database successfully started");
                 log::info!("Database connection URI: {}", &pg.db_uri);

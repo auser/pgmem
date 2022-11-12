@@ -17,7 +17,7 @@ describe('Database', () => {
     return inst;
   }
 
-  afterAll(async () => {
+  afterEach(async () => {
     await Promise.all(dbs.map(async (db) => db.stop))
   })
 
@@ -35,7 +35,7 @@ describe('Database', () => {
     await inst.stop();
   })
 
-  it('drops a database', async () => {
+  it.only('drops a database', async () => {
     const inst = await start_new_db();;
     const db_uri = await inst.new_db();
     expect(db_uri.indexOf("postgres://postgres:postgres@localhost")).equal(0);
