@@ -20,6 +20,7 @@ pub fn neon_main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("stop_db", SystemServer::js_stop)?;
     cx.export_function("new_db", SystemServer::js_create_new_db)?;
     cx.export_function("execute_sql", SystemServer::js_execute_sql)?;
+    cx.export_function("db_migration", SystemServer::js_execute_migrations)?;
     cx.export_function("drop_db", SystemServer::js_drop_database)?;
     Ok(())
 }

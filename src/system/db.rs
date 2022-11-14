@@ -10,7 +10,7 @@ use portpicker::pick_unused_port;
 use sqlx::{
     migrate::MigrateDatabase,
     postgres::{PgPoolOptions, PgRow},
-    Connection, Executor, PgConnection, Pool, Postgres, Row,
+    Acquire, Connection, Executor, PgConnection, Pool, Postgres, Row,
 };
 
 use std::{
@@ -140,6 +140,11 @@ impl DB {
         let res = self.connection.stop().await?;
         log::debug!("Stopped connection");
         Ok(res)
+    }
+    pub async fn migration(&mut self, db_name: String, path: &str) -> anyhow::Result<()> {
+        let res = self.connection.migration(db_name, path).await?;
+        log::debug!("Ran migrations");
+        Ok(())
     }
 
     pub async fn execute_sql(
@@ -314,10 +319,18 @@ impl DBLock {
     async fn sql(&mut self, sql: &str, db_name: Option<String>) -> anyhow::Result<Vec<PgRow>> {
         log::info!("Getting connection to database");
         let mut conn = self.get_connection(db_name).await?;
-        log::info!("Executing SQL: {}", sql);
+        log::info!("Executing SQL lines {}", sql.len());
         let res = conn.fetch_all(sqlx::query(sql)).await?;
 
         Ok(res)
+    }
+
+    pub async fn migration(&mut self, db_name: String, path: &str) -> anyhow::Result<()> {
+        let mut conn = self.get_connection(Some(db_name)).await?;
+        let migrator = sqlx::migrate::Migrator::new(PathBuf::from(path)).await?;
+        let conn = conn.acquire().await?;
+        let v = migrator.run(conn).await?;
+        Ok(v)
     }
 
     async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
@@ -585,6 +598,41 @@ mod test {
         let db_name = convert_db_url_to_db_name(String::from(db_uri.clone()));
         let res = db.drop_database(db_name).await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_db_can_execute_sql() {
+        let mut db = DB::new_embedded(ConfigDatabase::default()).await;
+        let _ = db.start().await;
+        let db_uri = db.create_new_db(None).await.unwrap();
+        let root_dir = env!("CARGO_MANIFEST_DIR");
+        let url = url::Url::parse(&db_uri).unwrap();
+        let path = url.path();
+        let db_name = &path[1..];
+
+        let filepath = String::from(
+            PathBuf::from(root_dir)
+                .join("test")
+                .join("fixtures")
+                .join("migrations")
+                .clone()
+                .to_str()
+                .unwrap(),
+        );
+
+        db.migration(db_name.to_string(), &filepath).await.unwrap();
+
+        let mut conn = PgConnection::connect(&db_uri).await.unwrap();
+        let res: Vec<String> = conn
+            .fetch_all(sqlx::query("SELECT tablename FROM pg_tables"))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter_map(|row| row.try_get("tablename").ok())
+            .collect();
+
+        let success = res.contains(&"User".to_string());
+        assert!(success);
     }
 
     fn convert_db_url_to_db_name(db_uri: String) -> String {

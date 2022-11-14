@@ -100,6 +100,21 @@ impl SystemInner {
         }
     }
 
+    pub async fn migration(
+        &mut self,
+        db_name: String,
+        migrations_path_str: String,
+    ) -> anyhow::Result<()> {
+        if self.running {
+            let mut db_lock = self.db_lock.lock().unwrap();
+            log::info!("Calling migration on db_lock");
+            let _ = db_lock.migration(db_name, &migrations_path_str);
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn execute_sql(&mut self, sql: String) -> anyhow::Result<()> {
         if self.running {
             let mut db_lock = self.db_lock.lock().unwrap();
@@ -171,6 +186,15 @@ impl System {
     pub async fn execute_sql(&mut self, sql: String) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
         Ok(inner.execute_sql(sql).await?)
+    }
+
+    pub async fn migration(
+        &mut self,
+        db_name: String,
+        migrations_dir: String,
+    ) -> anyhow::Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        Ok(inner.migration(db_name, migrations_dir).await?)
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {

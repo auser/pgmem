@@ -8,6 +8,7 @@ First create an instance of the database system:
 
 ```typescript
 const db = new Database()
+await db.start();
 ```
 
 When you want to create a new database, run `new_db()`:
