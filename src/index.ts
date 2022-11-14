@@ -41,7 +41,6 @@ const default_options: DatabaseOptions = {
   uri: "127.0.0.1",
   username: "postgres",
   password: "postgres",
-  port: 5434,
   timeout: 1000,
   host: "127.0.0.1",
 };
@@ -75,7 +74,7 @@ export class Database {
 
   async execute_sql(uri: String, sql: String) {
     let db = await this._get_db();
-    return db && execute_sql.call(db, uri, sql);
+    return db && execute_sql.call(db, sql);
   }
 
   async drop_db(uri: string) {

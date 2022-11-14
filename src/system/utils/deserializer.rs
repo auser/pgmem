@@ -33,6 +33,7 @@ mod test {
     struct TestStruct {
         #[serde(default, deserialize_with = "deserialize_optional_datetime_from_sec")]
         pub timestamp: Option<Duration>,
+        pub port: Option<i16>,
     }
 
     #[test]
@@ -44,6 +45,10 @@ mod test {
             Some(Duration::from_secs(1234))
         );
         serde_json_eq!(TestStruct, "{\"timestamp\":\"1234\"}", timestamp, None);
-        // serde_json_eq!(TestStruct, "{}", None);
+    }
+
+    #[test]
+    fn test_config_deserializes_port() {
+        serde_json_eq!(TestStruct, "{\"port\":1234}", port, Some(1234));
     }
 }

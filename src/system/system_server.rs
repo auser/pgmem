@@ -139,15 +139,7 @@ impl SystemServer {
     pub fn js_init(mut cx: FunctionContext) -> JsResult<JsBox<SystemServer>> {
         let cfg = cx.argument::<JsValue>(0)?;
 
-        println!("cfg: {:?}", cfg);
-
-        // let config_database: ConfigDatabase = match neon_serde3::from_value(&mut cx, cfg) {
-        //     Ok(v) => v,
-        //     Err(_) => ConfigDatabase::default(),
-        // };
         let config_database: ConfigDatabase = neon_serde3::from_value(&mut cx, cfg).unwrap();
-
-        println!("config_database: {:?}", config_database);
 
         let system_server = SystemServer::new(&mut cx, config_database)
             .or_else(|err| cx.throw_error(err.to_string()))?;
@@ -220,6 +212,8 @@ impl SystemServer {
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.create_new_db(None));
 
+                println!("Created new db: {:?}", res);
+
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
                     match res {
                         Err(e) => Ok(cx.string(e.to_string())),
@@ -238,15 +232,14 @@ impl SystemServer {
             .this()
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
 
-        let uri = cx.argument::<JsString>(0)?.value(&mut cx);
-        let sql = cx.argument::<JsString>(1)?.value(&mut cx);
+        let sql = cx.argument::<JsString>(0)?.value(&mut cx);
 
         system_server
             .send(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
-                let res = futures::executor::block_on(sys.execute_sql(uri, sql));
+                let res = futures::executor::block_on(sys.execute_sql(sql));
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {
@@ -275,8 +268,7 @@ impl SystemServer {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
-                let res = futures::executor::block_on(sys.drop_database(uri, db_name));
-                println!("res: {:?}", res);
+                let res = futures::executor::block_on(sys.drop_database(db_name));
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {

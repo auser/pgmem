@@ -84,11 +84,11 @@ impl SystemInner {
         }
     }
 
-    pub async fn drop_database(&mut self, uri: String, name: String) -> anyhow::Result<()> {
+    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
         if self.running {
             log::trace!("Dropping database: {}", name);
             let mut lock = self.db_lock.lock().unwrap();
-            match lock.drop_database(uri, name).await {
+            match lock.drop_database(name).await {
                 Err(e) => {
                     log::error!("Unable to drop database: {:?}", e.to_string());
                     Err(anyhow::anyhow!(e.to_string()))
@@ -100,11 +100,12 @@ impl SystemInner {
         }
     }
 
-    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
+    pub async fn execute_sql(&mut self, sql: String) -> anyhow::Result<()> {
         if self.running {
             let mut db_lock = self.db_lock.lock().unwrap();
             log::debug!("System called stop on the db_lock");
-            db_lock.execute_sql(uri, sql).await
+            let _ = db_lock.execute_sql(sql, None).await?;
+            Ok(())
         } else {
             Ok(())
         }
@@ -167,9 +168,9 @@ impl System {
         Ok(inner.stop().await?)
     }
 
-    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
+    pub async fn execute_sql(&mut self, sql: String) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        Ok(inner.execute_sql(uri, sql).await?)
+        Ok(inner.execute_sql(sql).await?)
     }
 
     pub async fn create_new_db(&mut self, name: Option<String>) -> anyhow::Result<String> {
@@ -177,9 +178,9 @@ impl System {
         Ok(inner.create_new_db(name).await?)
     }
 
-    pub async fn drop_database(&mut self, uri: String, name: String) -> anyhow::Result<()> {
+    pub async fn drop_database(&mut self, name: String) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        Ok(inner.drop_database(uri, name).await?)
+        Ok(inner.drop_database(name).await?)
     }
 }
 

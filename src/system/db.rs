@@ -1,6 +1,5 @@
 use anyhow::bail;
-use futures::{executor, TryFutureExt};
-use url::Url;
+use futures::TryFutureExt;
 
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
@@ -10,7 +9,7 @@ use pg_embed::{
 use portpicker::pick_unused_port;
 use sqlx::{
     migrate::MigrateDatabase,
-    postgres::{PgConnectOptions, PgPoolOptions, PgRow},
+    postgres::{PgPoolOptions, PgRow},
     Connection, Executor, PgConnection, Pool, Postgres, Row,
 };
 
@@ -18,7 +17,6 @@ use std::{
     fmt::Debug,
     fs::{self},
     path::PathBuf,
-    pin::Pin,
     time::Duration,
 };
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System as SysInfoSystem, SystemExt};
@@ -97,9 +95,9 @@ impl DB {
         Ok(conn_url)
     }
 
-    pub async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
+    pub async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
         log::info!("Attempting to drop the database {}", db_name);
-        match self.connection.drop_database(uri, db_name).await {
+        match self.connection.drop_database(db_name).await {
             Err(e) => {
                 log::error!("Error dropping database: {:?}", e.to_string());
                 Err(anyhow::anyhow!(e.to_string()))
@@ -144,8 +142,12 @@ impl DB {
         Ok(res)
     }
 
-    pub async fn execute_sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
-        let res = self.connection.sql(uri, sql).await?;
+    pub async fn execute_sql(
+        &mut self,
+        sql: String,
+        db_name: Option<String>,
+    ) -> anyhow::Result<Vec<PgRow>> {
+        let res = self.connection.sql(&sql, db_name).await?;
         log::debug!("Executed sql");
         Ok(res)
     }
@@ -166,16 +168,16 @@ impl Debug for DBLock {
     }
 }
 
-impl Drop for DBLock {
-    fn drop(&mut self) {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
-                runtime.block_on(self.drop_database());
-            });
-        });
-    }
-}
+// impl Drop for DBLock {
+//     fn drop(&mut self) {
+//         std::thread::scope(|s| {
+//             s.spawn(|| {
+//                 let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+//                 runtime.block_on(self.drop_database());
+//             });
+//         });
+//     }
+// }
 
 impl DBLock {
     pub fn as_uri(&self) -> &str {
@@ -189,6 +191,13 @@ impl DBLock {
         match self {
             DBLock::External(conn_string) => String::from(format!("{}/{}", conn_string, db_name)),
             DBLock::Embedded(pg) => (&pg).full_db_uri(db_name),
+        }
+    }
+
+    fn as_db_uri(&self, db_name: Option<String>) -> String {
+        match db_name {
+            None => String::from(self.as_uri()),
+            Some(d) => self.full_db_uri(d.clone().as_str()),
         }
     }
 
@@ -232,11 +241,7 @@ impl DBLock {
         }
     }
 
-    async fn drop_database(&mut self, uri: String, db_name: String) -> anyhow::Result<()> {
-        let uri2 = uri.clone();
-        let _parsed = Url::parse(uri2.as_str()).unwrap();
-        // let cleaned: &str = &parsed[..Position::AfterPort];
-
+    async fn drop_database(&mut self, db_name: String) -> anyhow::Result<()> {
         log::info!("Checking if the database is present");
 
         if !self.has_database(db_name.clone()).await? {
@@ -246,18 +251,29 @@ impl DBLock {
 
         log::info!("Database {} is present, proceeding to drop", db_name);
 
-        self.kill_all_connections(db_name.clone())
-            .await
-            .expect("Unable to kill all connections");
-
-        log::info!("All connections are dead... dropping the database: {}", uri);
+        log::info!(
+            "All connections are dead... dropping the database: {}",
+            db_name
+        );
         match self {
-            DBLock::External(_s) => {
-                log::info!("Trying to drop database at uri: {:?}", uri);
+            DBLock::External(s) => {
+                log::info!(
+                    "Trying to drop database at uri: {:?} (from {:?})",
+                    db_name,
+                    s
+                );
+                // let handle = Handle::current();
+                // let _ = handle.enter();
+
+                let uri = self.as_db_uri(Some(db_name));
                 let res = Postgres::drop_database(&uri)
-                    .map_err(|e| anyhow::anyhow!(e.to_string()))
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))
                     .await?;
                 log::info!("Database dropped: {:?}", res);
+                // let res = self
+                //     .sql(&format!("DROP DATABASE '{}';", db_name), None)
+                //     .map_err(|e| anyhow::anyhow!(e.to_string()))
+                //     .await?;
                 Ok(())
             }
             DBLock::Embedded(pg) => match pg.drop_database(db_name.as_str()).await {
@@ -273,39 +289,47 @@ impl DBLock {
         }
     }
 
+    #[allow(unused)]
     async fn kill_all_connections(&mut self, db_name: String) -> anyhow::Result<()> {
-        let mut conn = self.get_connection().await?;
+        let mut conn = self.get_connection(Some(db_name.clone())).await?;
 
         let res = conn
             .execute(sqlx::query(
                 format!(
                     r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
                     FROM pg_stat_activity
-                    WHERE datname = '{}';
-        "#,
+                    WHERE datname = '{}'
+                    AND pg_stat_activity.pid <> pg_backend_pid();"#,
                     &db_name
                 )
                 .as_str(),
             ))
             .await?;
 
-        log::debug!("Result: {:?}", res);
+        log::info!("Result: {:?}", res);
 
         Ok(())
     }
 
+    async fn sql(&mut self, sql: &str, db_name: Option<String>) -> anyhow::Result<Vec<PgRow>> {
+        log::info!("Getting connection to database");
+        let mut conn = self.get_connection(db_name).await?;
+        log::info!("Executing SQL: {}", sql);
+        let res = conn.fetch_all(sqlx::query(sql)).await?;
+
+        Ok(res)
+    }
+
     async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
-        let uri = self.as_uri();
         let system_databases = vec![
             "template0".to_string(),
             "template1".to_string(),
             "postgres".to_string(),
         ];
-        let database_rows = self
-            .sql_fetch_all(
-                String::from(uri),
-                String::from("SELECT datname FROM pg_database;"),
-            )
+        let mut conn = self.get_connection(None).await?;
+
+        let database_rows = conn
+            .fetch_all(sqlx::query("SELECT datname FROM pg_database;"))
             .await?
             .into_iter()
             .filter_map(|row| row.try_get("datname").ok())
@@ -316,22 +340,8 @@ impl DBLock {
     }
 
     async fn has_database(&mut self, db_name: String) -> anyhow::Result<bool> {
-        // let pool = self.get_pool().await?;
-        let mut conn = self.get_connection().await?;
-
-        let res = conn
-            .fetch_optional(sqlx::query(
-                format!(
-                    "SELECT datname FROM pg_database WHERE datname = '{}'",
-                    db_name
-                )
-                .as_str(),
-            ))
-            .await?;
-        match res {
-            None => Ok(false),
-            Some(_r) => Ok(true),
-        }
+        let uri = self.as_db_uri(Some(db_name.clone()));
+        Ok(Postgres::database_exists(&uri).await?)
     }
 
     async fn stop(&mut self) -> anyhow::Result<bool> {
@@ -357,13 +367,16 @@ impl DBLock {
         }
     }
 
-    async fn get_connection(&mut self) -> anyhow::Result<PgConnection> {
-        let uri = self.as_uri();
-        log::debug!("Connecting to url: {}", uri);
-        let conn = PgConnection::connect(&uri).await?;
-        Ok(conn)
+    async fn get_connection(&mut self, db_name: Option<String>) -> anyhow::Result<PgConnection> {
+        let uri = self.as_db_uri(db_name);
+        log::info!("Connecting to url: {}", uri);
+        let conn = PgConnection::connect(&uri).await;
+        log::info!("Connection result: {:?}", conn);
+        Ok(conn.unwrap())
     }
 
+    // Temporary
+    #[allow(unused)]
     async fn get_pool(&mut self) -> anyhow::Result<Pool<Postgres>> {
         let uri = self.as_uri();
         log::debug!("Using uri: {:?}", uri);
@@ -375,52 +388,6 @@ impl DBLock {
             .connect(&uri)
             .await?;
         Ok(pool)
-    }
-
-    async fn sql(&mut self, uri: String, sql: String) -> anyhow::Result<()> {
-        let pool = PgPoolOptions::new()
-            .max_connections(32)
-            .connect(&uri)
-            .await?;
-
-        match self {
-            DBLock::External(_s) => {
-                // TODO: implement, maybe?
-                Err(anyhow::anyhow!(
-                    "Not implemented for external databases yet"
-                ))
-            }
-            DBLock::Embedded(_pg) => match pool.execute(sql.as_str()).await {
-                Ok(_r) => Ok(()),
-                Err(e) => {
-                    error!("Error occurrend when migrating: {:?}", e.to_string());
-                    Err(anyhow::anyhow!(e.to_string()))
-                }
-            },
-        }
-    }
-
-    async fn sql_fetch_all(&mut self, uri: String, sql: String) -> anyhow::Result<Vec<PgRow>> {
-        let pool = PgPoolOptions::new()
-            .max_connections(32)
-            .connect(&uri)
-            .await?;
-
-        match self {
-            DBLock::External(_s) => {
-                // TODO: implement, maybe?
-                Err(anyhow::anyhow!(
-                    "Not implemented for external databases yet"
-                ))
-            }
-            DBLock::Embedded(_pg) => match pool.fetch_all(sql.as_str()).await {
-                Ok(r) => Ok(r),
-                Err(e) => {
-                    error!("Error occurrend when migrating: {:?}", e.to_string());
-                    Err(anyhow::anyhow!(e.to_string()))
-                }
-            },
-        }
     }
 }
 
@@ -581,6 +548,8 @@ impl DBType {
 
 #[cfg(test)]
 mod test {
+    use url::Url;
+
     use super::*;
 
     #[test]
@@ -611,14 +580,10 @@ mod test {
         let mut db = DB::new_embedded(ConfigDatabase::default()).await;
         let _ = db.start().await;
         let db_uri = db.create_new_db(None).await.unwrap();
-        let contains_db = db
-            .drop_database(String::from(db_uri.clone()), "not_a_database".to_string())
-            .await;
+        let contains_db = db.drop_database("not_a_database".to_string()).await;
         assert!(contains_db.is_err());
         let db_name = convert_db_url_to_db_name(String::from(db_uri.clone()));
-        let res = db
-            .drop_database(String::from(db_uri.clone()), db_name)
-            .await;
+        let res = db.drop_database(db_name).await;
         assert!(res.is_ok());
     }
 
