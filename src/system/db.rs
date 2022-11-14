@@ -1,5 +1,5 @@
 use anyhow::bail;
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
@@ -8,11 +8,10 @@ use pg_embed::{
 };
 use portpicker::pick_unused_port;
 use sqlx::{
-    migrate::{Migrate, MigrateDatabase},
+    migrate::MigrateDatabase,
     postgres::{PgPoolOptions, PgRow},
-    Acquire, Connection, Executor, PgConnection, Pool, Postgres, Row,
+    Connection, Executor, PgConnection, Pool, Postgres, Row,
 };
-use tokio::runtime::Runtime;
 
 use std::{
     fmt::Debug,
