@@ -8,6 +8,7 @@ const {
   new_db,
   drop_db,
   execute_sql,
+  db_migration,
 } = require("./index.node");
 
 export enum DB_TYPE {
@@ -72,7 +73,13 @@ export class Database {
     return db && new_db.call(db, name);
   }
 
-  async execute_sql(uri: String, sql: String) {
+  async migrate(uri: string, migrations_dir: string) {
+    let db = await this._get_db();
+    let db_name = this._get_db_name_from_uri(uri);
+    return db_migration.call(db, db_name, migrations_dir);
+  }
+
+  async execute_sql(uri: string, sql: string) {
     let db = await this._get_db();
     return db && execute_sql.call(db, sql);
   }
@@ -91,6 +98,12 @@ export class Database {
       this.db = init_db(this.options);
     }
     return this.db;
+  }
+
+  _get_db_name_from_uri(uri: string) {
+    const url_obj = new URL(uri);
+    const db_name = url_obj.pathname.split("/")[1];
+    return db_name;
   }
 }
 

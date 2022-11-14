@@ -1442,6 +1442,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sqlx 0.6.2",
+ "sqlx-rt 0.6.2",
  "sysinfo",
  "tempdir",
  "thiserror",

@@ -107,10 +107,16 @@ impl SystemInner {
     ) -> anyhow::Result<()> {
         if self.running {
             let mut db_lock = self.db_lock.lock().unwrap();
-            log::info!("Calling migration on db_lock");
-            let _ = db_lock.migration(db_name, &migrations_path_str);
+            log::info!(
+                "Calling migration on db_lock {:?} for {:?}",
+                db_name,
+                migrations_path_str
+            );
+            let _ = db_lock.migration(db_name, &migrations_path_str).await?;
+            log::info!("Completed migration");
             Ok(())
         } else {
+            log::info!("Database is not running... cannot migrate");
             Ok(())
         }
     }

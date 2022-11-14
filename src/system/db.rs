@@ -1,5 +1,5 @@
 use anyhow::bail;
-use futures::TryFutureExt;
+use futures::{FutureExt, TryFutureExt};
 
 use pg_embed::{
     pg_enums::{Architecture, OperationSystem, PgAuthMethod},
@@ -8,15 +8,16 @@ use pg_embed::{
 };
 use portpicker::pick_unused_port;
 use sqlx::{
-    migrate::MigrateDatabase,
+    migrate::{Migrate, MigrateDatabase},
     postgres::{PgPoolOptions, PgRow},
     Acquire, Connection, Executor, PgConnection, Pool, Postgres, Row,
 };
+use tokio::runtime::Runtime;
 
 use std::{
     fmt::Debug,
     fs::{self},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System as SysInfoSystem, SystemExt};
@@ -143,8 +144,9 @@ impl DB {
     }
     pub async fn migration(&mut self, db_name: String, path: &str) -> anyhow::Result<()> {
         let res = self.connection.migration(db_name, path).await?;
-        log::debug!("Ran migrations");
-        Ok(())
+
+        println!("migration finished: {:#?}", res);
+        Ok(res)
     }
 
     pub async fn execute_sql(
@@ -325,12 +327,57 @@ impl DBLock {
         Ok(res)
     }
 
-    pub async fn migration(&mut self, db_name: String, path: &str) -> anyhow::Result<()> {
+    async fn migration(&mut self, db_name: String, path: &str) -> anyhow::Result<()> {
+        log::info!("Trying migration for db: {}", &db_name);
+        let mut migrator = sqlx::migrate::Migrator::new(Path::new(path)).await?;
+        assert!(
+            migrator.migrations.len() > 0,
+            "No migrations found in given directory"
+        );
+        migrator.set_locking(false);
+        // let _ = handle.enter();
+        // let res = handle
+        //     .block_on(async move {
+        // migrator.set_ignore_missing(true);
+        // let pool = self.get_db_pool(db_name).await?;
+        // migrator.set_ignore_missing(true);
+        // let conn = conn.acquire().await?;
+        // log::info!("Ensuring migrations table exists");
+
+        // let handle = tokio::runtime::Handle::current();
+        // let handle = tokio::runtime::Builder::new_current_thread()
+        //     .enable_all()
+        //     .build()
+        //     .expect("failed to initialize tokio runtime");
         let mut conn = self.get_connection(Some(db_name)).await?;
-        let migrator = sqlx::migrate::Migrator::new(PathBuf::from(path)).await?;
-        let conn = conn.acquire().await?;
-        let v = migrator.run(conn).await?;
-        Ok(v)
+
+        for migration in migrator.migrations.iter() {
+            let sql: &str = &migration.sql.as_ref();
+            let _res = conn.execute(sql).await?;
+        }
+
+        // let res = migrator
+        //     .migrations
+        //     .into_iter()
+        //     .map(|m| {
+        //         println!("Migration: {:#?}", m);
+        //         conn.execute(sqlx::query(&m.sql)).await
+        //     })
+        //     .collect();
+        Ok(())
+
+        // match migrator.run(&mut conn).await {
+        //     Err(e) => {
+        //         log::error!("An error occurred running migration: {:?}", e.to_string());
+        //         conn.close().await?;
+        //         Err(anyhow::anyhow!(e.to_string()))
+        //     }
+        //     Ok(o) => {
+        //         log::info!("Completed migration run");
+        //         conn.close().await?;
+        //         Ok(o)
+        //     }
+        // }
     }
 
     async fn list_databases(&mut self) -> anyhow::Result<Vec<String>> {
@@ -385,13 +432,37 @@ impl DBLock {
         log::info!("Connecting to url: {}", uri);
         let conn = PgConnection::connect(&uri).await;
         log::info!("Connection result: {:?}", conn);
-        Ok(conn.unwrap())
+        match conn {
+            Ok(c) => Ok(c),
+            Err(e) => {
+                log::error!(
+                    "Error making connection to {:?} => {:#?}",
+                    uri,
+                    e.to_string()
+                );
+                Err(anyhow::anyhow!(e.to_string()))
+            }
+        }
     }
 
     // Temporary
     #[allow(unused)]
     async fn get_pool(&mut self) -> anyhow::Result<Pool<Postgres>> {
         let uri = self.as_uri();
+        log::debug!("Using uri: {:?}", uri);
+
+        let pool = PgPoolOptions::new()
+            .min_connections(0)
+            .max_connections(32)
+            .acquire_timeout(Duration::from_millis(1000))
+            .connect(&uri)
+            .await?;
+        Ok(pool)
+    }
+    // Temporary
+    #[allow(unused)]
+    async fn get_db_pool(&mut self, db_name: String) -> anyhow::Result<Pool<Postgres>> {
+        let uri = self.full_db_uri(&db_name);
         log::debug!("Using uri: {:?}", uri);
 
         let pool = PgPoolOptions::new()
@@ -561,6 +632,8 @@ impl DBType {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
     use url::Url;
 
     use super::*;
@@ -601,24 +674,31 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_db_can_execute_sql() {
-        let mut db = DB::new_embedded(ConfigDatabase::default()).await;
+    async fn test_db_can_connect_to_external_db() {
+        let mut db = DB::new_external(
+            ".".to_string(),
+            "postgres://postgres:postgres@localhost:5432".to_string(),
+        )
+        .await;
         let _ = db.start().await;
         let db_uri = db.create_new_db(None).await.unwrap();
-        let root_dir = env!("CARGO_MANIFEST_DIR");
+        println!("db_url: {:?}", db_uri);
+    }
+
+    #[tokio::test]
+    async fn test_db_can_run_migrations() {
+        let mut db = DB::new_external(
+            ".".to_string(),
+            "postgres://postgres:postgres@localhost:5432".to_string(),
+        )
+        .await;
+        let _ = db.start().await;
+        let db_uri = db.create_new_db(None).await.unwrap();
         let url = url::Url::parse(&db_uri).unwrap();
         let path = url.path();
         let db_name = &path[1..];
 
-        let filepath = String::from(
-            PathBuf::from(root_dir)
-                .join("test")
-                .join("fixtures")
-                .join("migrations")
-                .clone()
-                .to_str()
-                .unwrap(),
-        );
+        let filepath = String::from(Path::new("test/fixtures/migrations").to_str().unwrap());
 
         db.migration(db_name.to_string(), &filepath).await.unwrap();
 
@@ -631,8 +711,15 @@ mod test {
             .filter_map(|row| row.try_get("tablename").ok())
             .collect();
 
-        let success = res.contains(&"User".to_string());
-        assert!(success);
+        assert!(res.contains(&"User".to_string()));
+        assert!(res.contains(&"AdminUser".to_string()));
+
+        let res: String = conn
+            .fetch_one("SELECT email FROM public.\"User\"")
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(res, "demo@company.com");
     }
 
     fn convert_db_url_to_db_name(db_uri: String) -> String {

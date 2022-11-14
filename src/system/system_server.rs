@@ -230,15 +230,15 @@ impl SystemServer {
             .this()
             .downcast_or_throw::<JsBox<SystemServer>, _>(&mut cx)?;
 
-        let migrations_path_str = cx.argument::<JsString>(0)?.value(&mut cx);
-        let db_uri = cx.argument::<JsString>(1)?.value(&mut cx);
+        let db_name = cx.argument::<JsString>(0)?.value(&mut cx);
+        let migrations_path_str = cx.argument::<JsString>(1)?.value(&mut cx);
 
         system_server
             .send(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
                 let handle = Handle::current();
                 let _ = handle.enter();
-                let res = futures::executor::block_on(sys.migration(migrations_path_str, db_uri));
+                let res = futures::executor::block_on(sys.migration(db_name, migrations_path_str));
 
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsBoolean> {
                     match res {

@@ -51,19 +51,33 @@ describe('Database', () => {
   })
 
   it('can load sql', async () => {
-    const sql = (await readFile(join(__dirname, "fixtures", "migrations", "migration.sql"))).toString();
+    const sql = (await readFile(join(__dirname, "fixtures", "migrations", "1_migration.sql"))).toString();
 
     const inst = await start_new_db();
     const connectionString = await inst.new_db();
     await inst.execute_sql(connectionString, sql);
 
-    // const pool = new Pool({
-    //   connectionString,
-    // })
-    // const {rows} = await pool.query("SELECT * FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema';");
-    // pool.end();
+    await inst.drop_db(connectionString);
+    await inst.stop();
+  })
+
+  it('can run migrations', async () => {
+    const sql = join(__dirname, "fixtures", "migrations");
+
+    let inst = await start_new_db({db_type: "External", uri: "postgres://postgres:postgres@localhost:5432"});
+    const connectionString = await inst.new_db();
+    console.log('connectionString =>', connectionString);
+    await inst.migrate(connectionString, sql);
+
+        const pool = new Pool({
+      connectionString,
+    })
+    const {rows} = await pool.query("SELECT tablename FROM pg_tables;");
+    pool.end();
     // expect(rows.length).equal(2);
-    // const table_names = rows.map((r) => r.tablename).sort();
+    const table_names = rows.map((r) => r.tablename).sort();
+    expect(table_names.indexOf('AdminUser')).to.be.greaterThanOrEqual(0);
+    expect(table_names.indexOf('User')).to.be.greaterThanOrEqual(0);
     // expect(table_names).to.have.members(['AdminUser', 'User']);
 
     await inst.drop_db(connectionString);
@@ -88,8 +102,5 @@ describe('Database', () => {
     await inst.stop();
   })
 
-  // it('creates a new database', async () => {
-  //   const db_uri = await db.new_db();
-  //   expect(db_uri).toBe("bob");
-  // })
+
 })
