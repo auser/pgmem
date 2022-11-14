@@ -212,8 +212,6 @@ impl SystemServer {
                 let _ = handle.enter();
                 let res = futures::executor::block_on(sys.create_new_db(None));
 
-                println!("Created new db: {:?}", res);
-
                 deferred.settle_with(channel, move |mut cx| -> JsResult<JsString> {
                     match res {
                         Err(e) => Ok(cx.string(e.to_string())),
