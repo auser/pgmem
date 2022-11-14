@@ -1,4 +1,3 @@
-const { promisify } = require("util");
 import * as url from "node:url";
 
 const {
@@ -16,15 +15,6 @@ export enum DB_TYPE {
   EMBEDDED = "Embedded",
 }
 
-// pub db_type: String,
-// pub uri: String,
-// pub root_path: Option<String>,
-// pub username: Option<String>,
-// pub password: Option<String>,
-// pub persistent: Option<bool>,
-// pub port: Option<i16>,
-// pub timeout: Option<Duration>,
-// pub host: Option<String>,
 export type DatabaseOptions = {
   db_type: DB_TYPE;
   uri: string;
@@ -68,15 +58,21 @@ export class Database {
     return this;
   }
 
-  async new_db(name: string) {
+  async new_db(name?: string) {
     let db = await this._get_db();
     return db && new_db.call(db, name);
   }
 
-  async migrate(uri: string, migrations_dir: string) {
+  async run_migrations(uri: string, migrations_dir: string) {
     let db = await this._get_db();
     let db_name = this._get_db_name_from_uri(uri);
-    return db_migration.call(db, db_name, migrations_dir);
+    console.log(
+      "AKSDJFKASJDFKASJDKFAJSDKFAJSDKFJASDKFJ",
+      db_name,
+      migrations_dir
+    );
+
+    return db && db_migration.call(db, db_name, migrations_dir);
   }
 
   async execute_sql(uri: string, sql: string) {
@@ -107,4 +103,4 @@ export class Database {
   }
 }
 
-module.exports = Database;
+export default Database;

@@ -7,9 +7,10 @@
   "typings": "./dist/index.d.ts",
   "scripts": {
     "build": "run-s build:package build:ts",
-    "build:package": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
+    "build:package": "cargo-cp-artifact -nc src/index.node -- cargo build --message-format=json-render-diagnostics",
     "build:ts": "tsbb build --file-names src/index.ts --no-esm",
-    "postbuild:ts": "mv ./index.node dist/index.node",
+    "watch": "tsbb watch --file-names src/index.ts --no-esm",
+    "postbuild-release:ts": "mv ./src/index.node dist/index.node",
     "build-debug": "npm run build --",
     "build-release": "run-s build-release:*",
     "build-release:package": "npm run build:package -- --release",
@@ -21,7 +22,8 @@
     "release:tags": "git push && git push --tags"
   },
   "files": [
-    "/dist"
+    "/dist",
+    "index.node"
   ],
   "config": {
     "commitizen": {

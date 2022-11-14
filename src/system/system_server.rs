@@ -233,6 +233,11 @@ impl SystemServer {
         let db_name = cx.argument::<JsString>(0)?.value(&mut cx);
         let migrations_path_str = cx.argument::<JsString>(1)?.value(&mut cx);
 
+        println!(
+            "Called js_execute_migrations: {} {}",
+            db_name, migrations_path_str
+        );
+
         system_server
             .send(deferred, move |sys, channel, deferred| {
                 let mut sys = sys.lock().unwrap();
@@ -246,7 +251,10 @@ impl SystemServer {
                             log::error!("Error executing sql: {:?}", e);
                             Ok(cx.boolean(false))
                         }
-                        Ok(_) => Ok(cx.boolean(true)),
+                        Ok(_) => {
+                            log::info!("Ran migrations!");
+                            Ok(cx.boolean(true))
+                        }
                     }
                 });
             })

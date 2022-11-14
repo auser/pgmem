@@ -1,4 +1,3 @@
-src/
 ./dist/system/
 ./dist/lib.rs
 tsconfig.json

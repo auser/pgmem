@@ -1,6 +1,6 @@
 'use strict';
 
-const Database = require("..");
+const {Database} = require("..");
 const expect = require('chai').expect
 const { Pool, Client } = require('pg')
 const { readFile } = require('fs/promises');
@@ -67,7 +67,7 @@ describe('Database', () => {
     let inst = await start_new_db({db_type: "External", uri: "postgres://postgres:postgres@localhost:5432"});
     const connectionString = await inst.new_db();
     console.log('connectionString =>', connectionString);
-    await inst.migrate(connectionString, sql);
+    await inst.run_migrations(connectionString, sql);
         const pool = new Pool({
       connectionString,
     })

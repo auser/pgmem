@@ -7,4 +7,5 @@ data
 logs
 db.pwfile
 db/
-/dist
+lib/
+dist
