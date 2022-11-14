@@ -66,12 +66,6 @@ export class Database {
   async run_migrations(uri: string, migrations_dir: string) {
     let db = await this._get_db();
     let db_name = this._get_db_name_from_uri(uri);
-    console.log(
-      "AKSDJFKASJDFKASJDKFAJSDKFAJSDKFJASDKFJ",
-      db_name,
-      migrations_dir
-    );
-
     return db && db_migration.call(db, db_name, migrations_dir);
   }
 

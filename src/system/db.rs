@@ -350,7 +350,7 @@ impl DBLock {
         //     .expect("failed to initialize tokio runtime");
         let mut conn = self.get_connection(Some(db_name)).await?;
 
-        for migration in migrator.migrations.iter() {
+        for migration in migrator.migrations.into_iter() {
             let sql: &str = &migration.sql.as_ref();
             let _res = conn.execute(sql).await?;
         }
