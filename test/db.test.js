@@ -68,7 +68,6 @@ describe('Database', () => {
     const connectionString = await inst.new_db();
     console.log('connectionString =>', connectionString);
     await inst.migrate(connectionString, sql);
-
         const pool = new Pool({
       connectionString,
     })
